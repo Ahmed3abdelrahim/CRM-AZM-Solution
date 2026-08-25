@@ -48,26 +48,10 @@ Forcing direction through that component is correct; using `text-left`/`text-rig
 repair a layout is a violation.
 
 ### IV. Universal Tenant Attribution
-Every tenant-scoped domain table MUST carry `branch_id` and `department_id`: customers,
-contact_methods, tickets, attachments, teams, categories, priorities, ticket_statuses,
-status_transitions, sla_policies, quick_replies, kb_articles, user_roles.
-
-Three categories are exempt and MUST NOT carry both columns:
-
-- Structural tables that define tenancy itself: `branches` (neither), `departments`
-  (`branch_id` only), `users` (`branch_id` required, `department_id` nullable — a user's
-  operative department comes from `user_roles`).
-- Global reference tables shared across all tenants: `roles`, `permissions`,
-  `role_permissions`.
-- Child tables reachable only through a scoped parent, where the columns would be
-  denormalization: `ticket_events`, `kb_article_chunks`, `llm_calls`.
-
-Child tables are scoped transitively through a mandatory join to their parent, enforced in
-the same `ScopedRepository` base class. `audit_logs`, `inbound_messages`, and `api_keys`
-carry `branch_id` NULLABLE — a system-level or pre-resolution record has no branch.
-
-**Enforcement point**: migration schema convention plus the shared base model (PLAN.md §4.1);
-the exemption list above is exhaustive and additions require an amendment.
+Every table MUST carry the tenant columns dictated by its scoping pattern, as assigned in
+PLAN.md §4.1. That assignment is exhaustive and authoritative; tables assigned S4 or S6 MUST
+NOT carry `branch_id` or `department_id`. **Enforcement point**: migration schema convention
+plus the shared base model; adding a table requires assigning it a pattern in PLAN.md §4.1.
 
 ### V. Repository-Layer Tenant Scoping
 Tenant scoping MUST be applied inside the repository layer and MUST NEVER be left to the caller.
@@ -171,4 +155,4 @@ against these principles before merge. A violation is resolved by either fixing 
 a justification in that plan's Complexity Tracking table, or — for Tier D scope only — an entry in
 `docs/DEBT.md` per Principle XIII.
 
-**Version**: 1.0.0 | **Ratified**: 2026-08-25 | **Last Amended**: 2026-08-25
+**Version**: 1.2.0 | **Ratified**: 2026-08-25 | **Last Amended**: 2026-08-25

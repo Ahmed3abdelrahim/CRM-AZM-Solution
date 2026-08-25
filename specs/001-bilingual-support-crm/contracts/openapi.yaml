@@ -1,0 +1,1061 @@
+openapi: 3.0.3
+info:
+  title: Bilingual Support CRM API
+  version: "1.0.0"
+  description: >
+    Tier M and Tier S endpoints only, per PLAN.md §3. Tier D capabilities (audit-trail browsing,
+    chatbot, live chat, WhatsApp/SMS, CSAT, custom branding, ERP/webhook integrations) are
+    intentionally absent — see specs/002 through specs/007. Every mutating operation requires the
+    permission code named in its `x-permission` extension, checked by the service-layer guard
+    decorator (see plan.md), independent of whether this contract is the caller.
+servers:
+  - url: /api/v1
+tags:
+  - name: auth
+  - name: admin
+  - name: customers
+  - name: tickets
+  - name: kb
+  - name: ai
+  - name: channels
+  - name: portal
+  - name: reports
+  - name: api-keys
+  - name: health
+
+paths:
+  # ---------------------------------------------------------------- health
+  /health:
+    get:
+      tags: [health]
+      operationId: getHealth
+      security: []
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/HealthStatus" } } } }
+
+  # ---------------------------------------------------------------- auth
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/LoginRequest" } } }
+      responses:
+        "200": { description: Issued token pair, content: { application/json: { schema: { $ref: "#/components/schemas/TokenPair" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /auth/refresh:
+    post:
+      tags: [auth]
+      operationId: refreshToken
+      security: []
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/RefreshRequest" } } }
+      responses:
+        "200": { description: Renewed access token, content: { application/json: { schema: { $ref: "#/components/schemas/TokenPair" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      responses:
+        "204": { description: Logged out }
+
+  # ---------------------------------------------------------------- admin: branches
+  /branches:
+    get: { $ref: "#/components/pathItems/AdminList_Branch" }
+    post: { $ref: "#/components/pathItems/AdminCreate_Branch" }
+  /branches/{id}:
+    get: { $ref: "#/components/pathItems/AdminGet_Branch" }
+    patch: { $ref: "#/components/pathItems/AdminUpdate_Branch" }
+  /branches/{id}/deactivate:
+    post: { $ref: "#/components/pathItems/AdminDeactivate_Branch" }
+
+  # ---------------------------------------------------------------- admin: departments
+  /departments:
+    get: { $ref: "#/components/pathItems/AdminList_Department" }
+    post: { $ref: "#/components/pathItems/AdminCreate_Department" }
+  /departments/{id}:
+    get: { $ref: "#/components/pathItems/AdminGet_Department" }
+    patch: { $ref: "#/components/pathItems/AdminUpdate_Department" }
+  /departments/{id}/deactivate:
+    post: { $ref: "#/components/pathItems/AdminDeactivate_Department" }
+
+  # ---------------------------------------------------------------- admin: users
+  /users:
+    get: { $ref: "#/components/pathItems/AdminList_User" }
+    post: { $ref: "#/components/pathItems/AdminCreate_User" }
+  /users/{id}:
+    get: { $ref: "#/components/pathItems/AdminGet_User" }
+    patch: { $ref: "#/components/pathItems/AdminUpdate_User" }
+  /users/{id}/deactivate:
+    post: { $ref: "#/components/pathItems/AdminDeactivate_User" }
+  /users/{id}/roles:
+    get:
+      tags: [admin]
+      operationId: listUserRoles
+      x-permission: admin.config
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/UserRole" } } } } } }
+    post:
+      tags: [admin]
+      operationId: grantUserRole
+      x-permission: admin.config
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UserRoleCreate" } } } }
+      responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/UserRole" } } } } }
+
+  # ---------------------------------------------------------------- admin: roles & permissions
+  /roles:
+    get: { $ref: "#/components/pathItems/AdminList_Role" }
+    post: { $ref: "#/components/pathItems/AdminCreate_Role" }
+  /roles/{id}:
+    get: { $ref: "#/components/pathItems/AdminGet_Role" }
+    patch: { $ref: "#/components/pathItems/AdminUpdate_Role" }
+    delete: { $ref: "#/components/pathItems/AdminDelete_Role" }
+  /roles/{id}/permissions:
+    get:
+      tags: [admin]
+      operationId: listRolePermissions
+      x-permission: admin.config
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Permission" } } } } } }
+    post:
+      tags: [admin]
+      operationId: grantRolePermission
+      x-permission: admin.config
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [permission_id], properties: { permission_id: { type: string, format: uuid } } } } } }
+      responses: { "201": { description: Created } }
+  /permissions:
+    get:
+      tags: [admin]
+      operationId: listPermissions
+      x-permission: admin.config
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Permission" } } } } } }
+
+  # ---------------------------------------------------------------- admin: categories / priorities / statuses / transitions / sla / quick replies / teams
+  /categories:
+    get: { $ref: "#/components/pathItems/AdminList_Category" }
+    post: { $ref: "#/components/pathItems/AdminCreate_Category" }
+  /categories/{id}:
+    get: { $ref: "#/components/pathItems/AdminGet_Category" }
+    patch: { $ref: "#/components/pathItems/AdminUpdate_Category" }
+  /categories/{id}/deactivate:
+    post: { $ref: "#/components/pathItems/AdminDeactivate_Category" }
+
+  /priorities:
+    get: { $ref: "#/components/pathItems/AdminList_Priority" }
+    post: { $ref: "#/components/pathItems/AdminCreate_Priority" }
+  /priorities/{id}:
+    get: { $ref: "#/components/pathItems/AdminGet_Priority" }
+    patch: { $ref: "#/components/pathItems/AdminUpdate_Priority" }
+    delete: { $ref: "#/components/pathItems/AdminDelete_Priority" }
+
+  /ticket-statuses:
+    get: { $ref: "#/components/pathItems/AdminList_TicketStatus" }
+    post: { $ref: "#/components/pathItems/AdminCreate_TicketStatus" }
+  /ticket-statuses/{id}:
+    get: { $ref: "#/components/pathItems/AdminGet_TicketStatus" }
+    patch: { $ref: "#/components/pathItems/AdminUpdate_TicketStatus" }
+    delete: { $ref: "#/components/pathItems/AdminDelete_TicketStatus" }
+
+  /status-transitions:
+    get: { $ref: "#/components/pathItems/AdminList_StatusTransition" }
+    post: { $ref: "#/components/pathItems/AdminCreate_StatusTransition" }
+  /status-transitions/{id}:
+    patch: { $ref: "#/components/pathItems/AdminUpdate_StatusTransition" }
+    delete:
+      tags: [admin]
+      operationId: deleteStatusTransition
+      x-permission: admin.config
+      description: >
+        Hard delete, RESTRICT-guarded — a stray transition row is a workflow-configuration
+        mistake, not operational history; removing one does not orphan any ticket, since tickets
+        reference statuses, never transition rows. Several other reference-data entities are also
+        hard-deletable (data-model.md §0.4) — this is not the only one.
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses: { "204": { description: Deleted } }
+
+  /sla-policies:
+    get: { $ref: "#/components/pathItems/AdminList_SlaPolicy" }
+    post: { $ref: "#/components/pathItems/AdminCreate_SlaPolicy" }
+  /sla-policies/{id}:
+    get: { $ref: "#/components/pathItems/AdminGet_SlaPolicy" }
+    patch: { $ref: "#/components/pathItems/AdminUpdate_SlaPolicy" }
+    delete: { $ref: "#/components/pathItems/AdminDelete_SlaPolicy" }
+
+  /quick-replies:
+    get: { $ref: "#/components/pathItems/AdminList_QuickReply" }
+    post: { $ref: "#/components/pathItems/AdminCreate_QuickReply" }
+  /quick-replies/{id}:
+    get: { $ref: "#/components/pathItems/AdminGet_QuickReply" }
+    patch: { $ref: "#/components/pathItems/AdminUpdate_QuickReply" }
+    delete: { $ref: "#/components/pathItems/AdminDelete_QuickReply" }
+
+  /teams:
+    get: { $ref: "#/components/pathItems/AdminList_Team" }
+    post: { $ref: "#/components/pathItems/AdminCreate_Team" }
+  /teams/{id}:
+    get: { $ref: "#/components/pathItems/AdminGet_Team" }
+    patch: { $ref: "#/components/pathItems/AdminUpdate_Team" }
+    delete: { $ref: "#/components/pathItems/AdminDelete_Team" }
+  /teams/{id}/members:
+    post:
+      tags: [admin]
+      operationId: addTeamMember
+      x-permission: admin.config
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [user_id], properties: { user_id: { type: string, format: uuid } } } } } }
+      responses: { "201": { description: Added } }
+
+  # ---------------------------------------------------------------- customers (F01)
+  /customers:
+    get:
+      tags: [customers]
+      operationId: listCustomers
+      x-permission: customer.read
+      parameters:
+        - { $ref: "#/components/parameters/Search" }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Offset" }
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Customer" } } } } } }
+    post:
+      tags: [customers]
+      operationId: createCustomer
+      x-permission: customer.create
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CustomerCreate" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Customer" } } } }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /customers/{id}:
+    get:
+      tags: [customers]
+      operationId: getCustomer
+      x-permission: customer.read
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Customer" } } } }, "404": { $ref: "#/components/responses/NotFound" } }
+    patch:
+      tags: [customers]
+      operationId: updateCustomer
+      x-permission: customer.create
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CustomerUpdate" } } } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Customer" } } } } }
+  /customers/{id}/deactivate:
+    post:
+      tags: [customers]
+      operationId: deactivateCustomer
+      x-permission: customer.delete
+      description: Soft deactivation only. No hard-delete endpoint exists (FR-013).
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Customer" } } } } }
+  /customers/{id}/history:
+    get:
+      tags: [customers]
+      operationId: getCustomerHistory
+      x-permission: customer.read
+      description: Chronological merge of every ticket and every ticket_event for this customer (FR-014).
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CustomerHistory" } } } } }
+  /customers/{id}/contact-methods:
+    get:
+      tags: [customers]
+      operationId: listContactMethods
+      x-permission: customer.read
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ContactMethod" } } } } } }
+    post:
+      tags: [customers]
+      operationId: addContactMethod
+      x-permission: customer.create
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ContactMethodCreate" } } } }
+      responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ContactMethod" } } } } }
+  /customers/{id}/attachments:
+    post:
+      tags: [customers]
+      operationId: uploadCustomerAttachment
+      x-permission: customer.create
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { required: true, content: { multipart/form-data: { schema: { $ref: "#/components/schemas/AttachmentUpload" } } } }
+      responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Attachment" } } } } }
+
+  # ---------------------------------------------------------------- tickets (F02, F05)
+  /tickets:
+    get:
+      tags: [tickets]
+      operationId: listTickets
+      x-permission: ticket.read
+      description: >
+        Backs every F04 dashboard view (my open tickets, my team's queue, unassigned, breaching
+        soon, recently closed) via the `view` parameter plus the shared filter set (FR-026/FR-027).
+      parameters:
+        - { $ref: "#/components/parameters/TicketView" }
+        - { $ref: "#/components/parameters/StatusFilter" }
+        - { $ref: "#/components/parameters/PriorityFilter" }
+        - { $ref: "#/components/parameters/CategoryFilter" }
+        - { $ref: "#/components/parameters/AssigneeFilter" }
+        - { $ref: "#/components/parameters/ChannelFilter" }
+        - { $ref: "#/components/parameters/DateFrom" }
+        - { $ref: "#/components/parameters/DateTo" }
+        - { $ref: "#/components/parameters/Search" }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Offset" }
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/TicketSummary" } } } } } }
+    post:
+      tags: [tickets]
+      operationId: createTicket
+      x-permission: ticket.create
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/TicketCreate" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Ticket" } } } }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /tickets/{id}:
+    get:
+      tags: [tickets]
+      operationId: getTicket
+      x-permission: ticket.read
+      description: Includes inline customer context per FR-028.
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Ticket" } } } }, "404": { $ref: "#/components/responses/NotFound" } }
+    patch:
+      tags: [tickets]
+      operationId: updateTicket
+      x-permission: ticket.create
+      description: Field edits only (subject, description, category, priority) — status/assignment go through their own endpoints.
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/TicketUpdate" } } } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Ticket" } } } } }
+  /tickets/{id}/status:
+    post:
+      tags: [tickets]
+      operationId: changeTicketStatus
+      x-permission: ticket.read
+      description: >
+        Legality checked exclusively against `status_transitions` (FR-017). No status name is
+        special-cased in code. 422 on an illegal transition names the current status and the
+        permitted targets, localized.
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/TicketStatusChange" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Ticket" } } } }
+        "422": { description: Illegal transition, content: { application/json: { schema: { $ref: "#/components/schemas/IllegalTransitionError" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /tickets/{id}/assign:
+    post:
+      tags: [tickets]
+      operationId: assignTicket
+      x-permission: ticket.assign
+      description: Assignee and team are independent (FR-019) — either or both may be set in one call.
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/TicketAssign" } } } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Ticket" } } } } }
+  /tickets/{id}/sla-override:
+    post:
+      tags: [tickets]
+      operationId: overrideTicketSla
+      x-permission: ticket.sla_override
+      description: >
+        Existing policies only, reason required (FR-039). Recomputes deadlines from the ticket's
+        original `created_at` under the newly selected policy, applying `sla_paused_ms` as usual;
+        an immediately-breaching result is permitted and recorded.
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/SlaOverrideRequest" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Ticket" } } } }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /tickets/{id}/events:
+    get:
+      tags: [tickets]
+      operationId: getTicketEvents
+      x-permission: ticket.read
+      description: Full ordered timeline (FR-020). This is the only history view — no separate history feature exists.
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/TicketEvent" } } } } } }
+  /tickets/{id}/notes:
+    post:
+      tags: [tickets]
+      operationId: addTicketNote
+      x-permission: ticket.read
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/TicketNoteCreate" } } } }
+      responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/TicketEvent" } } } } }
+  /tickets/{id}/replies:
+    post:
+      tags: [tickets]
+      operationId: addTicketReply
+      x-permission: ticket.read
+      description: A `visibility=customer` reply. The first such reply on a ticket stamps `first_response_at` exactly once (FR-021).
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/TicketReplyCreate" } } } }
+      responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/TicketEvent" } } } } }
+  /tickets/{id}/attachments:
+    post:
+      tags: [tickets]
+      operationId: uploadTicketAttachment
+      x-permission: ticket.read
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { required: true, content: { multipart/form-data: { schema: { $ref: "#/components/schemas/AttachmentUpload" } } } }
+      responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Attachment" } } } } }
+  /tickets/{id}/triage:
+    post:
+      tags: [tickets]
+      operationId: correctTicketTriage
+      x-permission: ticket.assign
+      description: Corrects a needs_triage ticket's branch/department; clears the flag and records old/new values on the timeline (FR-023c).
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/TicketTriageCorrection" } } } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Ticket" } } } } }
+
+  # ---------------------------------------------------------------- kb (F06)
+  /kb/articles:
+    get:
+      tags: [kb]
+      operationId: listKbArticles
+      x-permission: kb_article.read
+      parameters: [{ $ref: "#/components/parameters/Limit" }, { $ref: "#/components/parameters/Offset" }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/KbArticle" } } } } } }
+    post:
+      tags: [kb]
+      operationId: createKbArticle
+      x-permission: kb_article.create
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/KbArticleCreate" } } } }
+      responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/KbArticle" } } } } }
+  /kb/articles/{id}:
+    get:
+      tags: [kb]
+      operationId: getKbArticle
+      x-permission: kb_article.read
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/KbArticle" } } } } }
+    patch:
+      tags: [kb]
+      operationId: updateKbArticle
+      x-permission: kb_article.create
+      description: On save, the body is re-chunked and re-embedded per locale.
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/KbArticleUpdate" } } } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/KbArticle" } } } } }
+  /kb/articles/{id}/publish:
+    post:
+      tags: [kb]
+      operationId: publishKbArticle
+      x-permission: kb_article.publish
+      description: Rejected with 422 if either language's title/body is empty (FR-041).
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/KbArticle" } } } }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /kb/search:
+    get:
+      tags: [kb]
+      operationId: searchKb
+      x-permission: kb_article.read
+      description: Hybrid trigram + vector search, RRF-fused, optionally reranked (FR-042/FR-043).
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/Limit" }
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/KbSearchResult" } } } } } }
+
+  # ---------------------------------------------------------------- ai (F07)
+  /tickets/{id}/ai/summary:
+    post:
+      tags: [ai]
+      operationId: getAiSummary
+      x-permission: ticket.read
+      description: >
+        On-demand. Fallback (LLM unreachable): first 300 characters of `description` (FR-047).
+        Output language always matches `tickets.source_locale` (FR-048).
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AiSummaryResponse" } } } } }
+  /tickets/{id}/ai/suggested-reply:
+    post:
+      tags: [ai]
+      operationId: getAiSuggestedReply
+      x-permission: ticket.read
+      description: >
+        On-demand draft only — never auto-sent (FR-046). Fallback: composer opens empty.
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AiSuggestedReplyResponse" } } } } }
+  /tickets/{id}/ai/suggested-solution:
+    get:
+      tags: [ai]
+      operationId: getAiSuggestedSolution
+      x-permission: ticket.read
+      description: Top 3 KB articles from FR-042's hybrid search over the ticket's subject+description. Fallback (FR-047) — empty list, panel does not render.
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/KbSearchResult" } } } } } }
+  /tickets/{id}/ai/categorization-suggestion:
+    post:
+      tags: [ai]
+      operationId: acceptAiCategorization
+      x-permission: ticket.create
+      description: >
+        Accepts or overrides the AI's `ai_suggested_category_id`. Acceptance writes an
+        `ai_suggestion_applied` event recording the suggestion and confidence (FR-044).
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CategorizationDecision" } } } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Ticket" } } } } }
+  /ai/categorization-benchmark:
+    post:
+      tags: [ai]
+      operationId: runCategorizationBenchmark
+      x-permission: admin.config
+      description: Scores categorization accuracy against the bilingual golden set of 20 tickets (FR-050).
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BenchmarkResult" } } } } }
+
+  # ---------------------------------------------------------------- channels (F03, Tier S)
+  /channels/inbound:
+    post:
+      tags: [channels]
+      operationId: postInboundMessage
+      security: [{ ApiKeyAuth: [] }]
+      x-permission: ticket.create
+      description: >
+        Accepts a pre-normalized payload — this is how any future channel integrates without
+        touching ticket-creation logic (FR-024). API-key auth only; not usable by a staff JWT.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/NormalizedMessagePayload" } } } }
+      responses:
+        "202": { description: Accepted for processing, content: { application/json: { schema: { $ref: "#/components/schemas/InboundMessageAccepted" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  # ---------------------------------------------------------------- portal (F08, Tier S) — unauthenticated
+  /portal/tickets:
+    post:
+      tags: [portal]
+      operationId: submitPortalTicket
+      security: []
+      description: Creates a ticket with channel=portal (FR-052). No account required.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PortalTicketSubmit" } } } }
+      responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/PortalTicketReceipt" } } } } }
+  /portal/tickets/{reference_no}:
+    get:
+      tags: [portal]
+      operationId: trackPortalTicket
+      security: []
+      description: >
+        Requires the contact method used at submission as a query parameter. A mismatched contact
+        method returns 404, identical to an unknown reference (FR-053) — never 403.
+      parameters:
+        - { name: reference_no, in: path, required: true, schema: { type: string } }
+        - { name: contact_value, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PortalTicketView" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /portal/customers/{reference_no}/history:
+    get:
+      tags: [portal]
+      operationId: getPortalCustomerHistory
+      security: []
+      description: Own tickets only, resolved via the same reference+contact pairing as tracking. Never includes visibility=internal events (FR-054).
+      parameters:
+        - { name: reference_no, in: path, required: true, schema: { type: string } }
+        - { name: contact_value, in: query, required: true, schema: { type: string } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/PortalTicketView" } } } } }, "404": { $ref: "#/components/responses/NotFound" } }
+  /portal/kb/articles:
+    get:
+      tags: [portal]
+      operationId: listPortalKbArticles
+      security: []
+      description: Published articles only (FR-055).
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/KbArticle" } } } } } }
+  /portal/kb/articles/{slug}:
+    get:
+      tags: [portal]
+      operationId: getPortalKbArticle
+      security: []
+      parameters: [{ name: slug, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/KbArticle" } } } }, "404": { $ref: "#/components/responses/NotFound" } }
+
+  # ---------------------------------------------------------------- reports (F09, Tier S)
+  /reports/tickets-by-status:
+    get:
+      tags: [reports]
+      operationId: getTicketsByStatusReport
+      x-permission: ticket.read
+      description: Own branch/department only, unless the caller holds report.cross_branch (FR-060).
+      parameters:
+        - { $ref: "#/components/parameters/DateFrom" }
+        - { $ref: "#/components/parameters/DateTo" }
+        - { name: cross_branch, in: query, schema: { type: boolean, default: false } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/TicketsByStatusReport" } } } }, "403": { $ref: "#/components/responses/Forbidden" } }
+  /reports/sla-compliance:
+    get:
+      tags: [reports]
+      operationId: getSlaComplianceReport
+      x-permission: ticket.read
+      description: First-response and resolution compliance tracked separately (FR-059).
+      parameters:
+        - { $ref: "#/components/parameters/DateFrom" }
+        - { $ref: "#/components/parameters/DateTo" }
+        - { name: cross_branch, in: query, schema: { type: boolean, default: false } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/SlaComplianceReport" } } } } }
+  /reports/agent-volume:
+    get:
+      tags: [reports]
+      operationId: getAgentVolumeReport
+      x-permission: ticket.read
+      parameters:
+        - { $ref: "#/components/parameters/DateFrom" }
+        - { $ref: "#/components/parameters/DateTo" }
+        - { name: cross_branch, in: query, schema: { type: boolean, default: false } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AgentVolumeReport" } } } } }
+
+  # ---------------------------------------------------------------- api-keys (F11, Tier S)
+  /api-keys:
+    get:
+      tags: [api-keys]
+      operationId: listApiKeys
+      x-permission: admin.config
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ApiKey" } } } } } }
+    post:
+      tags: [api-keys]
+      operationId: createApiKey
+      x-permission: admin.config
+      description: The plaintext key is returned exactly once, in this response only; only its hash is stored.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ApiKeyCreate" } } } }
+      responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ApiKeyCreated" } } } } }
+  /api-keys/{id}/revoke:
+    post:
+      tags: [api-keys]
+      operationId: revokeApiKey
+      x-permission: admin.config
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ApiKey" } } } } }
+
+components:
+  securitySchemes:
+    BearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+    ApiKeyAuth: { type: apiKey, in: header, name: X-API-Key }
+
+  parameters:
+    PathId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    Limit: { name: limit, in: query, schema: { type: integer, default: 50, maximum: 200 } }
+    Offset: { name: offset, in: query, schema: { type: integer, default: 0 } }
+    Search: { name: q, in: query, schema: { type: string } }
+    TicketView: { name: view, in: query, schema: { type: string, enum: [my_open, team_queue, unassigned, breaching_soon, recently_closed] } }
+    StatusFilter: { name: status_id, in: query, schema: { type: string, format: uuid } }
+    PriorityFilter: { name: priority_id, in: query, schema: { type: string, format: uuid } }
+    CategoryFilter: { name: category_id, in: query, schema: { type: string, format: uuid } }
+    AssigneeFilter: { name: assignee_id, in: query, schema: { type: string, format: uuid } }
+    ChannelFilter: { name: channel, in: query, schema: { type: string, enum: [web, email, whatsapp, sms, chat, portal] } }
+    DateFrom: { name: date_from, in: query, schema: { type: string, format: date } }
+    DateTo: { name: date_to, in: query, schema: { type: string, format: date } }
+
+  responses:
+    NotFound: { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+    Unauthorized: { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+    Forbidden: { description: Forbidden — permission not held, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+    ValidationError: { description: Validation failed, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  schemas:
+    HealthStatus: { type: object, required: [status], properties: { status: { type: string, enum: [ok] }, database: { type: string }, redis: { type: string } } }
+    ErrorResponse:
+      type: object
+      required: [message_ar, message_en]
+      properties:
+        message_ar: { type: string }
+        message_en: { type: string }
+        code: { type: string }
+
+    LoginRequest: { type: object, required: [email, password], properties: { email: { type: string, format: email }, password: { type: string, format: password } } }
+    RefreshRequest: { type: object, required: [refresh_token], properties: { refresh_token: { type: string } } }
+    TokenPair: { type: object, required: [access_token, refresh_token], properties: { access_token: { type: string }, refresh_token: { type: string }, expires_in: { type: integer } } }
+
+    ReferenceDataBase:
+      description: >
+        Only label_ar/label_en are universal (PLAN.md C2). is_active and sort_order are NOT part
+        of this shared base — PLAN.md §4.2 lists them per table inconsistently, so each entity
+        schema below adds them itself only where data-model.md §0.4's table says it applies. An
+        entity with no is_active property is hard-deletable (see its DELETE operation), not
+        soft-deactivatable.
+      type: object
+      required: [id, label_ar, label_en]
+      properties:
+        id: { type: string, format: uuid }
+        label_ar: { type: string }
+        label_en: { type: string }
+
+    Branch:
+      allOf:
+        - $ref: "#/components/schemas/ReferenceDataBase"
+        - type: object
+          required: [code, timezone, business_hours, is_active]
+          properties: { code: { type: string }, timezone: { type: string }, business_hours: { type: object }, is_active: { type: boolean } }
+    BranchCreate: { type: object, required: [code, label_ar, label_en, timezone, business_hours], properties: { code: { type: string }, label_ar: { type: string }, label_en: { type: string }, timezone: { type: string }, business_hours: { type: object } } }
+    BranchUpdate: { type: object, properties: { label_ar: { type: string }, label_en: { type: string }, timezone: { type: string }, business_hours: { type: object } } }
+
+    Department:
+      allOf:
+        - $ref: "#/components/schemas/ReferenceDataBase"
+        - type: object
+          required: [branch_id, code, is_active]
+          properties: { branch_id: { type: string, format: uuid }, code: { type: string }, is_active: { type: boolean } }
+    DepartmentCreate: { type: object, required: [branch_id, code, label_ar, label_en], properties: { branch_id: { type: string, format: uuid }, code: { type: string }, label_ar: { type: string }, label_en: { type: string } } }
+    DepartmentUpdate: { type: object, properties: { label_ar: { type: string }, label_en: { type: string } } }
+
+    User:
+      type: object
+      required: [id, branch_id, email, full_name_ar, full_name_en, locale, is_active]
+      properties:
+        id: { type: string, format: uuid }
+        branch_id: { type: string, format: uuid }
+        department_id: { type: string, format: uuid, nullable: true }
+        email: { type: string, format: email }
+        full_name_ar: { type: string }
+        full_name_en: { type: string }
+        phone: { type: string, nullable: true }
+        locale: { type: string, enum: [ar, en] }
+        is_active: { type: boolean }
+        last_login_at: { type: string, format: date-time, nullable: true }
+    UserCreate: { type: object, required: [branch_id, email, password, full_name_ar, full_name_en, locale], properties: { branch_id: { type: string, format: uuid }, department_id: { type: string, format: uuid, nullable: true }, email: { type: string, format: email }, password: { type: string, format: password }, full_name_ar: { type: string }, full_name_en: { type: string }, phone: { type: string }, locale: { type: string, enum: [ar, en] } } }
+    UserUpdate: { type: object, properties: { full_name_ar: { type: string }, full_name_en: { type: string }, phone: { type: string }, locale: { type: string, enum: [ar, en] } } }
+    UserRole: { type: object, required: [id, user_id, role_id, branch_id, department_id], properties: { id: { type: string, format: uuid }, user_id: { type: string, format: uuid }, role_id: { type: string, format: uuid }, branch_id: { type: string, format: uuid }, department_id: { type: string, format: uuid } } }
+    UserRoleCreate: { type: object, required: [role_id, branch_id, department_id], properties: { role_id: { type: string, format: uuid }, branch_id: { type: string, format: uuid }, department_id: { type: string, format: uuid } } }
+
+    Role:
+      allOf:
+        - $ref: "#/components/schemas/ReferenceDataBase"
+        - type: object
+          required: [code]
+          properties: { code: { type: string, enum: [admin, lead, agent, customer] } }
+    RoleCreate: { type: object, required: [code, label_ar, label_en], properties: { code: { type: string, enum: [admin, lead, agent, customer] }, label_ar: { type: string }, label_en: { type: string } } }
+    RoleUpdate: { type: object, properties: { label_ar: { type: string }, label_en: { type: string } } }
+    Permission:
+      allOf:
+        - $ref: "#/components/schemas/ReferenceDataBase"
+        - type: object
+          required: [code]
+          properties: { code: { type: string } }
+
+    Category:
+      allOf:
+        - $ref: "#/components/schemas/ReferenceDataBase"
+        - type: object
+          required: [branch_id, is_active, sort_order]
+          properties: { branch_id: { type: string, format: uuid }, department_id: { type: string, format: uuid, nullable: true }, parent_id: { type: string, format: uuid, nullable: true }, is_active: { type: boolean }, sort_order: { type: integer } }
+    CategoryCreate: { type: object, required: [branch_id, label_ar, label_en], properties: { branch_id: { type: string, format: uuid }, department_id: { type: string, format: uuid, nullable: true }, parent_id: { type: string, format: uuid, nullable: true }, label_ar: { type: string }, label_en: { type: string }, sort_order: { type: integer } } }
+    CategoryUpdate: { type: object, properties: { label_ar: { type: string }, label_en: { type: string }, parent_id: { type: string, format: uuid, nullable: true }, sort_order: { type: integer } } }
+
+    Priority:
+      allOf:
+        - $ref: "#/components/schemas/ReferenceDataBase"
+        - type: object
+          required: [branch_id, code, severity, color]
+          properties: { branch_id: { type: string, format: uuid }, department_id: { type: string, format: uuid, nullable: true }, code: { type: string }, severity: { type: integer }, color: { type: string } }
+    PriorityCreate: { type: object, required: [branch_id, code, label_ar, label_en, severity, color], properties: { branch_id: { type: string, format: uuid }, department_id: { type: string, format: uuid, nullable: true }, code: { type: string }, label_ar: { type: string }, label_en: { type: string }, severity: { type: integer }, color: { type: string } } }
+    PriorityUpdate: { type: object, properties: { label_ar: { type: string }, label_en: { type: string }, severity: { type: integer }, color: { type: string } } }
+
+    TicketStatus:
+      allOf:
+        - $ref: "#/components/schemas/ReferenceDataBase"
+        - type: object
+          required: [branch_id, code, is_terminal, pauses_sla, sort_order]
+          properties: { branch_id: { type: string, format: uuid }, department_id: { type: string, format: uuid, nullable: true }, code: { type: string }, is_terminal: { type: boolean }, pauses_sla: { type: boolean }, sort_order: { type: integer } }
+    TicketStatusCreate: { type: object, required: [branch_id, code, label_ar, label_en, is_terminal, pauses_sla], properties: { branch_id: { type: string, format: uuid }, department_id: { type: string, format: uuid, nullable: true }, code: { type: string }, label_ar: { type: string }, label_en: { type: string }, is_terminal: { type: boolean }, pauses_sla: { type: boolean }, sort_order: { type: integer } } }
+    TicketStatusUpdate: { type: object, properties: { label_ar: { type: string }, label_en: { type: string } } }
+
+    StatusTransition:
+      type: object
+      required: [id, from_status_id, to_status_id, requires_reason]
+      properties:
+        id: { type: string, format: uuid }
+        branch_id: { type: string, format: uuid }
+        department_id: { type: string, format: uuid, nullable: true }
+        from_status_id: { type: string, format: uuid }
+        to_status_id: { type: string, format: uuid }
+        required_permission: { type: string, nullable: true }
+        requires_reason: { type: boolean }
+    StatusTransitionCreate: { type: object, required: [branch_id, from_status_id, to_status_id, requires_reason], properties: { branch_id: { type: string, format: uuid }, department_id: { type: string, format: uuid, nullable: true }, from_status_id: { type: string, format: uuid }, to_status_id: { type: string, format: uuid }, required_permission: { type: string, nullable: true }, requires_reason: { type: boolean } } }
+    StatusTransitionUpdate: { type: object, properties: { required_permission: { type: string, nullable: true }, requires_reason: { type: boolean } } }
+
+    SlaPolicy:
+      allOf:
+        - $ref: "#/components/schemas/ReferenceDataBase"
+        - type: object
+          required: [branch_id, first_response_minutes, resolution_minutes, business_hours_only]
+          properties: { branch_id: { type: string, format: uuid }, department_id: { type: string, format: uuid, nullable: true }, category_id: { type: string, format: uuid, nullable: true }, priority_id: { type: string, format: uuid, nullable: true }, first_response_minutes: { type: integer }, resolution_minutes: { type: integer }, business_hours_only: { type: boolean } }
+    SlaPolicyCreate: { type: object, required: [branch_id, label_ar, label_en, first_response_minutes, resolution_minutes], properties: { branch_id: { type: string, format: uuid }, department_id: { type: string, format: uuid, nullable: true }, category_id: { type: string, format: uuid, nullable: true }, priority_id: { type: string, format: uuid, nullable: true }, label_ar: { type: string }, label_en: { type: string }, first_response_minutes: { type: integer }, resolution_minutes: { type: integer }, business_hours_only: { type: boolean } } }
+    SlaPolicyUpdate: { type: object, properties: { label_ar: { type: string }, label_en: { type: string }, first_response_minutes: { type: integer }, resolution_minutes: { type: integer }, business_hours_only: { type: boolean } } }
+
+    QuickReply:
+      allOf:
+        - $ref: "#/components/schemas/ReferenceDataBase"
+        - type: object
+          required: [branch_id, department_id, body_ar, body_en]
+          properties: { branch_id: { type: string, format: uuid }, department_id: { type: string, format: uuid }, category_id: { type: string, format: uuid, nullable: true }, body_ar: { type: string }, body_en: { type: string } }
+    QuickReplyCreate: { type: object, required: [branch_id, department_id, label_ar, label_en, body_ar, body_en], properties: { branch_id: { type: string, format: uuid }, department_id: { type: string, format: uuid }, category_id: { type: string, format: uuid, nullable: true }, label_ar: { type: string }, label_en: { type: string }, body_ar: { type: string }, body_en: { type: string } } }
+    QuickReplyUpdate: { type: object, properties: { label_ar: { type: string }, label_en: { type: string }, body_ar: { type: string }, body_en: { type: string } } }
+
+    Team:
+      allOf:
+        - $ref: "#/components/schemas/ReferenceDataBase"
+        - type: object
+          required: [branch_id, department_id]
+          properties: { branch_id: { type: string, format: uuid }, department_id: { type: string, format: uuid } }
+    TeamCreate: { type: object, required: [branch_id, department_id, label_ar, label_en], properties: { branch_id: { type: string, format: uuid }, department_id: { type: string, format: uuid }, label_ar: { type: string }, label_en: { type: string } } }
+    TeamUpdate: { type: object, properties: { label_ar: { type: string }, label_en: { type: string } } }
+
+    Customer:
+      type: object
+      required: [id, branch_id, department_id, customer_type, full_name_ar, preferred_locale, is_active]
+      properties:
+        id: { type: string, format: uuid }
+        branch_id: { type: string, format: uuid }
+        department_id: { type: string, format: uuid }
+        customer_type: { type: string, enum: [individual, organization] }
+        full_name_ar: { type: string }
+        full_name_en: { type: string, nullable: true }
+        national_id: { type: string, nullable: true }
+        organization_name: { type: string, nullable: true }
+        preferred_locale: { type: string, enum: [ar, en] }
+        notes: { type: string, nullable: true }
+        is_active: { type: boolean }
+    CustomerCreate:
+      type: object
+      required: [branch_id, department_id, customer_type, full_name_ar, preferred_locale, contact_methods]
+      properties:
+        branch_id: { type: string, format: uuid }
+        department_id: { type: string, format: uuid }
+        customer_type: { type: string, enum: [individual, organization] }
+        full_name_ar: { type: string }
+        full_name_en: { type: string, nullable: true }
+        national_id: { type: string, nullable: true }
+        organization_name: { type: string, nullable: true }
+        preferred_locale: { type: string, enum: [ar, en] }
+        notes: { type: string, nullable: true }
+        contact_methods: { type: array, minItems: 1, items: { $ref: "#/components/schemas/ContactMethodCreate" }, description: "Exactly one item MUST have is_primary=true (FR-011)." }
+    CustomerUpdate: { type: object, properties: { full_name_ar: { type: string }, full_name_en: { type: string }, organization_name: { type: string }, preferred_locale: { type: string, enum: [ar, en] }, notes: { type: string } } }
+    CustomerHistory: { type: object, required: [tickets, events], properties: { tickets: { type: array, items: { $ref: "#/components/schemas/TicketSummary" } }, events: { type: array, items: { $ref: "#/components/schemas/TicketEvent" } } } }
+
+    ContactMethod:
+      type: object
+      required: [id, customer_id, kind, value, is_primary, is_verified]
+      properties: { id: { type: string, format: uuid }, customer_id: { type: string, format: uuid }, kind: { type: string, enum: [phone, email, whatsapp, other] }, value: { type: string }, is_primary: { type: boolean }, is_verified: { type: boolean } }
+    ContactMethodCreate: { type: object, required: [kind, value, is_primary], properties: { kind: { type: string, enum: [phone, email, whatsapp, other] }, value: { type: string }, is_primary: { type: boolean } } }
+
+    AttachmentUpload: { type: object, required: [file], properties: { file: { type: string, format: binary } } }
+    Attachment:
+      type: object
+      required: [id, filename, content_type, size_bytes, storage_key]
+      properties: { id: { type: string, format: uuid }, ticket_id: { type: string, format: uuid, nullable: true }, customer_id: { type: string, format: uuid, nullable: true }, filename: { type: string }, content_type: { type: string }, size_bytes: { type: integer }, storage_key: { type: string } }
+
+    TicketSummary:
+      type: object
+      required: [id, reference_no, subject, status_id, priority_id, category_id, channel, source_locale, needs_triage]
+      properties:
+        id: { type: string, format: uuid }
+        reference_no: { type: string }
+        subject: { type: string }
+        status_id: { type: string, format: uuid }
+        priority_id: { type: string, format: uuid }
+        category_id: { type: string, format: uuid }
+        assignee_id: { type: string, format: uuid, nullable: true }
+        team_id: { type: string, format: uuid, nullable: true }
+        channel: { type: string, enum: [web, email, whatsapp, sms, chat, portal] }
+        source_locale: { type: string, enum: [ar, en] }
+        needs_triage: { type: boolean }
+        created_at: { type: string, format: date-time }
+    Ticket:
+      allOf:
+        - $ref: "#/components/schemas/TicketSummary"
+        - type: object
+          required: [description, branch_id, department_id, customer_id, reopened_count, sla_paused_ms]
+          properties:
+            branch_id: { type: string, format: uuid }
+            department_id: { type: string, format: uuid }
+            customer_id: { type: string, format: uuid }
+            customer: { $ref: "#/components/schemas/Customer" }
+            description: { type: string }
+            sla_policy_id: { type: string, format: uuid, nullable: true }
+            first_response_at: { type: string, format: date-time, nullable: true }
+            resolved_at: { type: string, format: date-time, nullable: true }
+            closed_at: { type: string, format: date-time, nullable: true }
+            reopened_count: { type: integer }
+            sla_paused_ms: { type: integer }
+            ai_suggested_category_id: { type: string, format: uuid, nullable: true }
+            ai_category_confidence: { type: number, nullable: true }
+            sla_first_response_due_at: { type: string, format: date-time, nullable: true, description: "Computed at query time (FR-035); never stored." }
+            sla_resolution_due_at: { type: string, format: date-time, nullable: true, description: "Computed at query time; never stored." }
+            sla_breach_state: { type: string, enum: [on_track, at_risk, breached], description: "Derived; never stored (FR-035)." }
+    TicketCreate:
+      type: object
+      required: [branch_id, department_id, customer_id, subject, description, category_id, priority_id, channel, source_locale]
+      properties:
+        branch_id: { type: string, format: uuid }
+        department_id: { type: string, format: uuid }
+        customer_id: { type: string, format: uuid }
+        subject: { type: string }
+        description: { type: string }
+        category_id: { type: string, format: uuid }
+        priority_id: { type: string, format: uuid }
+        channel: { type: string, enum: [web, email, whatsapp, sms, chat, portal] }
+        source_locale: { type: string, enum: [ar, en] }
+        team_id: { type: string, format: uuid, nullable: true }
+    TicketUpdate: { type: object, properties: { subject: { type: string }, description: { type: string }, category_id: { type: string, format: uuid }, priority_id: { type: string, format: uuid } } }
+    TicketStatusChange: { type: object, required: [to_status_id], properties: { to_status_id: { type: string, format: uuid }, reason: { type: string, nullable: true, description: "Required when the matched status_transitions row has requires_reason=true." } } }
+    TicketAssign: { type: object, properties: { assignee_id: { type: string, format: uuid, nullable: true }, team_id: { type: string, format: uuid, nullable: true } } }
+    SlaOverrideRequest: { type: object, required: [sla_policy_id, reason], properties: { sla_policy_id: { type: string, format: uuid }, reason: { type: string, minLength: 1 } } }
+    TicketTriageCorrection: { type: object, required: [branch_id, department_id], properties: { branch_id: { type: string, format: uuid }, department_id: { type: string, format: uuid } } }
+    TicketNoteCreate: { type: object, required: [body], properties: { body: { type: string } } }
+    TicketReplyCreate: { type: object, required: [body], properties: { body: { type: string } } }
+    IllegalTransitionError:
+      allOf:
+        - $ref: "#/components/schemas/ErrorResponse"
+        - type: object
+          required: [current_status_id, permitted_status_ids]
+          properties: { current_status_id: { type: string, format: uuid }, permitted_status_ids: { type: array, items: { type: string, format: uuid } } }
+
+    TicketEvent:
+      type: object
+      required: [id, ticket_id, event_type, visibility, correlation_id, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        ticket_id: { type: string, format: uuid }
+        actor_id: { type: string, format: uuid, nullable: true }
+        event_type: { type: string, enum: [created, status_changed, assigned, reassigned, field_changed, note_added, reply_sent, attachment_added, sla_breached, reopened, ai_suggestion_applied], description: "Exactly PLAN.md §4.2's list. A needs-triage branch/department correction (FR-023c) is a field_changed event with field_name=branch_id or department_id, not a separate type." }
+        field_name: { type: string, nullable: true }
+        old_value: {}
+        new_value: {}
+        body: { type: string, nullable: true }
+        visibility: { type: string, enum: [internal, customer] }
+        reason: { type: string, nullable: true }
+        correlation_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+
+    KbArticle:
+      type: object
+      required: [id, slug, title_ar, title_en, body_ar, body_en, category_id, is_published]
+      properties:
+        id: { type: string, format: uuid }
+        branch_id: { type: string, format: uuid }
+        department_id: { type: string, format: uuid, nullable: true }
+        slug: { type: string }
+        title_ar: { type: string }
+        title_en: { type: string }
+        body_ar: { type: string }
+        body_en: { type: string }
+        category_id: { type: string, format: uuid }
+        is_published: { type: boolean }
+        view_count: { type: integer }
+        helpful_count: { type: integer }
+    KbArticleCreate: { type: object, required: [branch_id, slug, title_ar, title_en, body_ar, body_en, category_id], properties: { branch_id: { type: string, format: uuid }, department_id: { type: string, format: uuid, nullable: true }, slug: { type: string }, title_ar: { type: string }, title_en: { type: string }, body_ar: { type: string }, body_en: { type: string }, category_id: { type: string, format: uuid } } }
+    KbArticleUpdate: { type: object, properties: { title_ar: { type: string }, title_en: { type: string }, body_ar: { type: string }, body_en: { type: string }, category_id: { type: string, format: uuid } } }
+    KbSearchResult: { type: object, required: [article, score], properties: { article: { $ref: "#/components/schemas/KbArticle" }, score: { type: number }, matched_locale: { type: string, enum: [ar, en] } } }
+
+    AiSummaryResponse: { type: object, required: [summary, fallback_used], properties: { summary: { type: string }, fallback_used: { type: boolean } } }
+    AiSuggestedReplyResponse: { type: object, required: [draft, fallback_used], properties: { draft: { type: string }, fallback_used: { type: boolean } } }
+    CategorizationDecision: { type: object, required: [accepted], properties: { accepted: { type: boolean }, override_category_id: { type: string, format: uuid, nullable: true, description: "Required when accepted=false." } } }
+    BenchmarkResult: { type: object, required: [scored_count, accuracy], properties: { scored_count: { type: integer }, accuracy: { type: number } } }
+
+    NormalizedMessagePayload:
+      type: object
+      required: [external_id, channel, from_identity, to_identity, body, locale]
+      properties:
+        external_id: { type: string }
+        channel: { type: string, enum: [web, email, whatsapp, sms, chat, portal] }
+        from_identity: { type: string }
+        to_identity: { type: string, description: "The receiving identifier — matched against channel_configs.identifier (FR-023a)." }
+        subject: { type: string, nullable: true }
+        body: { type: string }
+        locale: { type: string, enum: [ar, en] }
+    InboundMessageAccepted: { type: object, required: [inbound_message_id], properties: { inbound_message_id: { type: string, format: uuid }, ticket_id: { type: string, format: uuid, nullable: true } } }
+
+    PortalTicketSubmit:
+      type: object
+      required: [full_name, contact_kind, contact_value, subject, description, category_id]
+      properties:
+        full_name: { type: string }
+        contact_kind: { type: string, enum: [phone, email, whatsapp, other] }
+        contact_value: { type: string }
+        subject: { type: string }
+        description: { type: string }
+        category_id: { type: string, format: uuid }
+    PortalTicketReceipt: { type: object, required: [reference_no], properties: { reference_no: { type: string } } }
+    PortalTicketView:
+      type: object
+      required: [reference_no, subject, status_id, created_at]
+      properties: { reference_no: { type: string }, subject: { type: string }, status_id: { type: string, format: uuid }, created_at: { type: string, format: date-time }, events: { type: array, items: { $ref: "#/components/schemas/TicketEvent" }, description: "Never includes visibility=internal entries (FR-054)." } }
+
+    TicketsByStatusReport: { type: object, required: [rows], properties: { rows: { type: array, items: { type: object, properties: { status_id: { type: string, format: uuid }, branch_id: { type: string, format: uuid }, department_id: { type: string, format: uuid }, count: { type: integer } } } } } }
+    SlaComplianceReport: { type: object, required: [first_response_compliance_pct, resolution_compliance_pct], properties: { first_response_compliance_pct: { type: number }, resolution_compliance_pct: { type: number } } }
+    AgentVolumeReport: { type: object, required: [rows], properties: { rows: { type: array, items: { type: object, properties: { agent_id: { type: string, format: uuid }, assigned_count: { type: integer }, resolved_count: { type: integer }, avg_resolution_minutes: { type: number } } } } } }
+
+    ApiKey: { type: object, required: [id, label, scopes], properties: { id: { type: string, format: uuid }, branch_id: { type: string, format: uuid, nullable: true }, label: { type: string }, scopes: { type: array, items: { type: string } }, last_used_at: { type: string, format: date-time, nullable: true }, expires_at: { type: string, format: date-time, nullable: true } } }
+    ApiKeyCreate: { type: object, required: [label, scopes], properties: { branch_id: { type: string, format: uuid, nullable: true }, label: { type: string }, scopes: { type: array, items: { type: string } }, expires_at: { type: string, format: date-time, nullable: true } } }
+    ApiKeyCreated: { allOf: [{ $ref: "#/components/schemas/ApiKey" }, { type: object, required: [plaintext_key], properties: { plaintext_key: { type: string } } }] }
+
+  pathItems:
+    # Generic reference-data CRUD pattern, instantiated once per admin entity. Every operation
+    # below requires x-permission: admin.config (PLAN.md F10: "Admin CRUD for branches,
+    # departments, users, roles, categories, priorities, statuses, transitions, SLA policies,
+    # quick replies" is one permission, not one per entity — see data-model.md §5).
+    AdminList_Branch: { get: { tags: [admin], operationId: listBranches, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/Limit" }, { $ref: "#/components/parameters/Offset" }], responses: { "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Branch" } } } } } } } }
+    AdminCreate_Branch: { post: { tags: [admin], operationId: createBranch, x-permission: admin.config, requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BranchCreate" } } } }, responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Branch" } } } } } } }
+    AdminGet_Branch: { get: { tags: [admin], operationId: getBranch, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Branch" } } } }, "404": { $ref: "#/components/responses/NotFound" } } } }
+    AdminUpdate_Branch: { patch: { tags: [admin], operationId: updateBranch, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/PathId" }], requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BranchUpdate" } } } }, responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Branch" } } } } } } }
+    AdminDeactivate_Branch: { post: { tags: [admin], operationId: deactivateBranch, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Branch" } } } } } } }
+
+    AdminList_Department: { get: { tags: [admin], operationId: listDepartments, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/Limit" }, { $ref: "#/components/parameters/Offset" }], responses: { "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Department" } } } } } } } }
+    AdminCreate_Department: { post: { tags: [admin], operationId: createDepartment, x-permission: admin.config, requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/DepartmentCreate" } } } }, responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Department" } } } } } } }
+    AdminGet_Department: { get: { tags: [admin], operationId: getDepartment, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Department" } } } } } } }
+    AdminUpdate_Department: { patch: { tags: [admin], operationId: updateDepartment, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/PathId" }], requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/DepartmentUpdate" } } } }, responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Department" } } } } } } }
+    AdminDeactivate_Department: { post: { tags: [admin], operationId: deactivateDepartment, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Department" } } } } } } }
+
+    AdminList_User: { get: { tags: [admin], operationId: listUsers, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/Limit" }, { $ref: "#/components/parameters/Offset" }], responses: { "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/User" } } } } } } } }
+    AdminCreate_User: { post: { tags: [admin], operationId: createUser, x-permission: admin.config, requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UserCreate" } } } }, responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } } } } }
+    AdminGet_User: { get: { tags: [admin], operationId: getUser, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } } } } }
+    AdminUpdate_User: { patch: { tags: [admin], operationId: updateUser, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/PathId" }], requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/UserUpdate" } } } }, responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } } } } }
+    AdminDeactivate_User: { post: { tags: [admin], operationId: deactivateUser, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } } } } }
+
+    AdminList_Role: { get: { tags: [admin], operationId: listRoles, x-permission: admin.config, responses: { "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Role" } } } } } } } }
+    AdminCreate_Role: { post: { tags: [admin], operationId: createRole, x-permission: admin.config, requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/RoleCreate" } } } }, responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Role" } } } } } } }
+    AdminGet_Role: { get: { tags: [admin], operationId: getRole, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Role" } } } } } } }
+    AdminUpdate_Role: { patch: { tags: [admin], operationId: updateRole, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/PathId" }], requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/RoleUpdate" } } } }, responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Role" } } } } } } }
+    AdminDelete_Role: { delete: { tags: [admin], operationId: deleteRole, x-permission: admin.config, description: "No is_active column (data-model.md §0.4) — hard delete, RESTRICT-guarded by user_roles/role_permissions.", parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted } } } }
+
+    AdminList_Category: { get: { tags: [admin], operationId: listCategories, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/Limit" }, { $ref: "#/components/parameters/Offset" }], responses: { "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Category" } } } } } } } }
+    AdminCreate_Category: { post: { tags: [admin], operationId: createCategory, x-permission: admin.config, requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CategoryCreate" } } } }, responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Category" } } } } } } }
+    AdminGet_Category: { get: { tags: [admin], operationId: getCategory, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Category" } } } } } } }
+    AdminUpdate_Category: { patch: { tags: [admin], operationId: updateCategory, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/PathId" }], requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CategoryUpdate" } } } }, responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Category" } } } } } } }
+    AdminDeactivate_Category: { post: { tags: [admin], operationId: deactivateCategory, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Category" } } } } } } }
+
+    AdminList_Priority: { get: { tags: [admin], operationId: listPriorities, x-permission: admin.config, responses: { "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Priority" } } } } } } } }
+    AdminCreate_Priority: { post: { tags: [admin], operationId: createPriority, x-permission: admin.config, requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PriorityCreate" } } } }, responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Priority" } } } } } } }
+    AdminGet_Priority: { get: { tags: [admin], operationId: getPriority, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Priority" } } } } } } }
+    AdminUpdate_Priority: { patch: { tags: [admin], operationId: updatePriority, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/PathId" }], requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PriorityUpdate" } } } }, responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Priority" } } } } } } }
+    AdminDelete_Priority: { delete: { tags: [admin], operationId: deletePriority, x-permission: admin.config, description: "No is_active column — hard delete, RESTRICT-guarded by tickets/sla_policies referencing it.", parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted } } } }
+
+    AdminList_TicketStatus: { get: { tags: [admin], operationId: listTicketStatuses, x-permission: admin.config, responses: { "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/TicketStatus" } } } } } } } }
+    AdminCreate_TicketStatus: { post: { tags: [admin], operationId: createTicketStatus, x-permission: admin.config, requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/TicketStatusCreate" } } } }, responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/TicketStatus" } } } } } } }
+    AdminGet_TicketStatus: { get: { tags: [admin], operationId: getTicketStatus, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/TicketStatus" } } } } } } }
+    AdminUpdate_TicketStatus: { patch: { tags: [admin], operationId: updateTicketStatus, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/PathId" }], requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/TicketStatusUpdate" } } } }, responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/TicketStatus" } } } } } } }
+    AdminDelete_TicketStatus: { delete: { tags: [admin], operationId: deleteTicketStatus, x-permission: admin.config, description: "No is_active column — hard delete, RESTRICT-guarded by tickets/status_transitions referencing it.", parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted } } } }
+
+    AdminList_StatusTransition: { get: { tags: [admin], operationId: listStatusTransitions, x-permission: admin.config, responses: { "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/StatusTransition" } } } } } } } }
+    AdminCreate_StatusTransition: { post: { tags: [admin], operationId: createStatusTransition, x-permission: admin.config, requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/StatusTransitionCreate" } } } }, responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/StatusTransition" } } } } } } }
+    AdminUpdate_StatusTransition: { patch: { tags: [admin], operationId: updateStatusTransition, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/PathId" }], requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/StatusTransitionUpdate" } } } }, responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StatusTransition" } } } } } } }
+
+    AdminList_SlaPolicy: { get: { tags: [admin], operationId: listSlaPolicies, x-permission: admin.config, responses: { "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/SlaPolicy" } } } } } } } }
+    AdminCreate_SlaPolicy: { post: { tags: [admin], operationId: createSlaPolicy, x-permission: admin.config, requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/SlaPolicyCreate" } } } }, responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/SlaPolicy" } } } } } } }
+    AdminGet_SlaPolicy: { get: { tags: [admin], operationId: getSlaPolicy, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/SlaPolicy" } } } } } } }
+    AdminUpdate_SlaPolicy: { patch: { tags: [admin], operationId: updateSlaPolicy, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/PathId" }], requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/SlaPolicyUpdate" } } } }, responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/SlaPolicy" } } } } } } }
+    AdminDelete_SlaPolicy: { delete: { tags: [admin], operationId: deleteSlaPolicy, x-permission: admin.config, description: "No is_active column — hard delete, RESTRICT-guarded by tickets.sla_policy_id referencing it.", parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted } } } }
+
+    AdminList_QuickReply: { get: { tags: [admin], operationId: listQuickReplies, x-permission: admin.config, responses: { "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/QuickReply" } } } } } } } }
+    AdminCreate_QuickReply: { post: { tags: [admin], operationId: createQuickReply, x-permission: admin.config, requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/QuickReplyCreate" } } } }, responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/QuickReply" } } } } } } }
+    AdminGet_QuickReply: { get: { tags: [admin], operationId: getQuickReply, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/QuickReply" } } } } } } }
+    AdminUpdate_QuickReply: { patch: { tags: [admin], operationId: updateQuickReply, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/PathId" }], requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/QuickReplyUpdate" } } } }, responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/QuickReply" } } } } } } }
+    AdminDelete_QuickReply: { delete: { tags: [admin], operationId: deleteQuickReply, x-permission: admin.config, description: "No is_active column — hard delete.", parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted } } } }
+
+    AdminList_Team: { get: { tags: [admin], operationId: listTeams, x-permission: admin.config, responses: { "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Team" } } } } } } } }
+    AdminCreate_Team: { post: { tags: [admin], operationId: createTeam, x-permission: admin.config, requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/TeamCreate" } } } }, responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Team" } } } } } } }
+    AdminGet_Team: { get: { tags: [admin], operationId: getTeam, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Team" } } } } } } }
+    AdminUpdate_Team: { patch: { tags: [admin], operationId: updateTeam, x-permission: admin.config, parameters: [{ $ref: "#/components/parameters/PathId" }], requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/TeamUpdate" } } } }, responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Team" } } } } } } }
+    AdminDelete_Team: { delete: { tags: [admin], operationId: deleteTeam, x-permission: admin.config, description: "No is_active column — hard delete. team_members cascade with it; tickets.team_id is SET NULL, not blocked.", parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted } } } }
+
+security:
+  - BearerAuth: []
