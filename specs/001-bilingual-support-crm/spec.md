@@ -192,11 +192,11 @@ breach state reads identically before and after.
 5. **Given** an unassigned ticket in a department with available agents holding the right permission,
    **When** auto-assignment runs, **Then** it is assigned to one of them in a fair rotating order,
    skipping anyone marked unavailable.
-6. **Given** a Team Lead, **When** they override the SLA policy applied to one specific ticket,
-   **Then** that ticket's deadlines are recalculated from the overridden policy going forward.
-   [NEEDS CLARIFICATION: is a Team Lead's override limited to choosing among the organization's
-   existing SLA policies, or can they set fully custom targets for that one ticket — and does an
-   override require a recorded reason, the way some status transitions do?]
+6. **Given** a Team Lead, **When** they override the SLA policy applied to one specific ticket by
+   selecting a different existing SLA policy and supplying a reason, **Then** that ticket's
+   deadlines are recalculated from the newly selected policy going forward and the reason is
+   recorded; **When** they attempt the override without supplying a reason, **Then** it is
+   rejected.
 7. *(Tier D — specified, not built)* **Given** a ticket that breaches or is about to breach its SLA,
    **When** the breach is recorded, **Then** the responsible agent or lead receives a notification
    through an external channel (e.g. email) containing the ticket's reference and the breached
@@ -283,18 +283,20 @@ ticket's reference number and confirm it appends to that ticket instead of creat
 
 **Acceptance Scenarios**:
 
-1. **Given** an inbound message from a sender with no matching contact method, **When** it is
-   processed, **Then** a new customer and a new ticket are created from it. [NEEDS CLARIFICATION:
-   PLAN.md requires every customer and every ticket to belong to exactly one branch and one
-   department, but does not state how a channel-originated message — which arrives with no branch or
-   department context — determines which one it belongs to. Is this fixed by the receiving mailbox
-   or channel configuration, chosen by a default branch/department, or resolved some other way?]
-2. **Given** an inbound message that quotes an existing ticket's reference number, **When** it is
+1. **Given** an inbound message arriving at a recipient identifier (e.g. a mailbox address) that is
+   configured to a specific branch and department, **When** it is processed and no matching contact
+   method is found, **Then** a new customer and a new ticket are created from it, scoped to that
+   configured branch and department.
+2. **Given** an inbound message arriving at a recipient identifier with no matching channel
+   configuration, **When** it is processed, **Then** the resulting customer and ticket are scoped to
+   a designated system-default branch and department, and the ticket is flagged as needing triage so
+   it surfaces in the Unassigned queue (Story 4) rather than being silently scoped incorrectly.
+3. **Given** an inbound message that quotes an existing ticket's reference number, **When** it is
    processed, **Then** it is appended to that ticket's timeline rather than creating a new ticket.
-3. **Given** the one functioning channel today (email), **When** a hypothetical new channel is added
+4. **Given** the one functioning channel today (email), **When** a hypothetical new channel is added
    later, **Then** doing so requires only that channel's own message-normalization behavior — no
    change to how tickets are created or updated.
-4. **Given** a channel not yet built (e.g. WhatsApp, SMS, live chat), **When** it is selected or
+5. **Given** a channel not yet built (e.g. WhatsApp, SMS, live chat), **When** it is selected or
    invoked, **Then** the system responds that it is not yet available, without affecting any other
    channel.
 
@@ -354,11 +356,11 @@ and confirm it reflects every branch.
 
 1. **Given** a Team Lead requesting reports, **When** they view ticket counts by status, SLA
    compliance, or per-agent volume, **Then** the figures cover only their own department.
-2. **Given** an Administrator requesting the same reports with an explicit cross-branch scope,
-   **When** they view them, **Then** the figures cover every branch. [NEEDS CLARIFICATION: PLAN.md
-   states an admin "may pass an explicit cross-branch scope" but does not say what specifically
-   authorizes this — is cross-branch reporting available to every account holding the administrator
-   role, or does it require a separate, distinctly grantable permission?]
+2. **Given** an Administrator who holds the separate cross-branch reporting permission and requests
+   the same reports with an explicit cross-branch scope, **When** they view them, **Then** the
+   figures cover every branch; **Given** an Administrator who does not hold that permission,
+   **When** they attempt the same request, **Then** it is refused and their reports remain confined
+   to their own branch/department, even though they hold other administrative permissions.
 3. *(Tier D — specified, not built)* **Given** satisfaction ratings exist (Story 9), **When**
    reporting is viewed, **Then** satisfaction results appear alongside the existing report set. Not
    implemented this sprint.
@@ -515,8 +517,13 @@ branch/department never sees data from another.
 - **FR-023**: An inbound message MUST be linked to an existing ticket when it references that
   ticket's reference number, or matched to an existing customer when the sender matches a known
   contact method; otherwise, a new customer record MUST be created from the sender's details.
-  [NEEDS CLARIFICATION: see Story 8, Scenario 1 — how is the branch and department determined for a
-  customer or ticket created this way?]
+- **FR-023a**: Each channel's receiving identifier (e.g. a mailbox address or a phone number) MUST
+  be configurable to a specific branch and department (and optionally a default category); an
+  inbound message MUST be scoped to whatever branch and department its receiving identifier is
+  configured to. A receiving identifier with no matching configuration MUST NOT block message
+  intake — the resulting customer/ticket MUST instead be scoped to a designated system-default
+  branch and department, and MUST be flagged as needing triage so it surfaces in the Unassigned
+  queue (FR-026) instead of being silently mis-scoped.
 - **FR-024**: Adding a new channel in the future MUST require implementing only that channel's own
   message-normalization behavior, with no change to how tickets are created or updated.
 - **FR-025**: A channel not yet built MUST be able to report that it is unavailable without affecting
@@ -561,9 +568,10 @@ branch/department never sees data from another.
 - **FR-038**: Unassigned tickets in a department MUST be distributable automatically, in a fair
   rotating order, to active agents in that department who hold the relevant permission and are not
   marked unavailable.
-- **FR-039**: A Team Lead MUST be able to override the SLA policy applied to an individual ticket.
-  [NEEDS CLARIFICATION: see Story 5, Scenario 6 — bounded to existing policies only, or fully custom
-  targets, and is a reason required?]
+- **FR-039**: A Team Lead MUST be able to override the SLA policy applied to an individual ticket by
+  selecting a different existing SLA policy for it; a reason MUST be supplied and recorded for the
+  override, and an override without a reason MUST be rejected. Custom, one-off SLA targets outside
+  the organization's configured policies are out of scope.
 - **FR-040** *(Tier D — specified, not built)*: When a ticket breaches or nears breaching its SLA,
   the responsible agent or lead MUST be able to receive a notification through an external channel
   (e.g. email), containing the ticket's reference and the breached target. Breach events are already
@@ -629,9 +637,9 @@ branch/department never sees data from another.
   branch, department, and date range), SLA compliance percentage tracked separately for first
   response and for resolution, and per-agent volume (assigned, resolved, average resolution time).
 - **FR-060**: A report MUST reflect only the branch(es)/department(s) the requester is authorized to
-  see, except that an administrator MAY explicitly request a broader, cross-branch view.
-  [NEEDS CLARIFICATION: see Story 10, Scenario 2 — is cross-branch reporting inherent to the
-  administrator role, or a separately grantable permission?]
+  see. Requesting a broader, explicit cross-branch view MUST require a distinct, separately
+  grantable permission — holding other administrative permissions MUST NOT by itself grant this
+  view.
 - **FR-061** *(Tier D — specified, not built)*: Once customer satisfaction ratings exist (FR-057),
   reporting MUST include satisfaction results alongside the existing report set.
 - **FR-062** *(Tier D — specified, not built)*: Reports MUST be schedulable for automatic delivery by
@@ -708,7 +716,12 @@ every one of F01–F11, per PLAN.md §5 F12.)*
   the workflow configurable rather than fixed in software.
 - **Ticket**: The central support record — its subject, description, category, priority, status,
   assignment (to an individual and/or a team), originating channel, and language — that everything
-  else in the product attaches to.
+  else in the product attaches to. A ticket may carry a needs-triage flag, set when it was created
+  from a channel message whose receiving identifier had no matching Channel Configuration, so it is
+  surfaced for a human to correct its branch/department assignment.
+- **Channel Configuration**: A mapping from one channel's receiving identifier (e.g. a mailbox
+  address or a phone number) to the branch, department, and optional default category that inbound
+  messages arriving there are scoped to.
 - **Ticket Activity Entry**: A single, permanent, ordered entry in a ticket's timeline (status change,
   assignment, field edit, note, reply, attachment, AI suggestion applied, SLA breach, reopen),
   attributed to whoever performed it.

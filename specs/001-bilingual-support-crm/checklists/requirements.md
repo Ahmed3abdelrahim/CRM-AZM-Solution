@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
+- [x] No [NEEDS CLARIFICATION] markers remain
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
@@ -31,14 +31,12 @@
 
 ## Notes
 
-- Three `[NEEDS CLARIFICATION]` markers remain by deliberate instruction (flag PLAN.md ambiguities
-  rather than guess), not by omission:
-  1. FR-023 / Story 8 — branch/department assignment for a customer or ticket created from an
-     unmatched inbound channel message.
-  2. FR-039 / Story 5 — bounds of a Team Lead's SLA policy override (existing policies only vs.
-     custom targets; reason required or not).
-  3. FR-060 / Story 10 — what specifically authorizes an administrator's cross-branch reporting
-     scope (inherent to the role, or a separate grantable permission).
-- These three were presented to the user as clarification questions per the spec-quality workflow.
-  Resolve via `/speckit.clarify` (or a direct answer) before `/speckit.plan`, which will otherwise
-  need to make its own assumption about all three.
+- All three clarifications raised during drafting were resolved by the user and folded into the
+  spec on 2026-08-25:
+  1. Channel-originated branch/department assignment (Story 8 / FR-023a) — resolved via a
+     per-channel-identifier configuration with a system-default + needs-triage fallback.
+  2. Team Lead SLA override bounds (Story 5 / FR-039) — resolved as existing-policies-only, reason
+     required.
+  3. Cross-branch reporting authorization (Story 10 / FR-060) — resolved as a separate, distinctly
+     grantable permission, not inherent to the Administrator role.
+- Spec is ready for `/speckit.plan`.
