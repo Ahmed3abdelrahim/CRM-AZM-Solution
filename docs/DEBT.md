@@ -22,7 +22,7 @@ An undocumented shortcut is a violation. If you take one during implementation, 
 | D08 | `llm_calls` table capturing model, prompt version, token counts, latency, and fallback usage | Langfuse for prompt versioning, trace trees, and evaluation runs | When the stack moves to a server with capacity for Langfuse's Postgres + ClickHouse + S3 dependencies | 0.5 day |
 | D09 | Reranking behind a feature flag, default off; fused RRF order returned when disabled | `bge-reranker-v2-m3` always on | GPU available, or when retrieval quality measurably limits suggested-solution accuracy | 0.25 day |
 | D10 | Audit rows written from day one, but no browsing interface | Searchable, filterable audit log UI with export | Before any compliance review. The data is complete — only the reader is missing | 0.5 day |
-
+| D11 | i18n enforcement is a grep check, not an ESLint rule | Proper ESLint rule integrated in CI | Phase 2 |
 ---
 
 ## Standing constraints these shortcuts must not violate

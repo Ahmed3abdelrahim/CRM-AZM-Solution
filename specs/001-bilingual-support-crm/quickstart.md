@@ -70,6 +70,10 @@ department), and the seeded permission set (`data-model.md` §5) — including `
 6. Reopen the closed ticket as the `agent` (who does not hold `ticket.reopen` by default seed
    data) — expect 403 — then as the `lead` (who does) — expect success, with `reopened_count`
    incremented (FR-018).
+7. Open the frontend dashboard (`frontend/app/[locale]/(agent)/dashboard/page.tsx`) and the
+   ticket-detail page for the ticket created above, in a browser resized to a 375px viewport
+   width. **Expected**: both pages remain fully usable — no clipped controls, no horizontal
+   scroll, no overlapping text — in both English and Arabic (FR-003, SC-007).
 
 ## 5. Validate tenant scoping (spec.md Story 12, Platform-Wide Requirements)
 

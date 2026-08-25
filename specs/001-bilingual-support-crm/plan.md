@@ -427,35 +427,56 @@ Defined once. **Entities that follow it verbatim** (i.e. their router calls only
 ```python
 class AdminCrudService(Generic[ModelT, CreateSchemaT, UpdateSchemaT]):
     repository_cls: ClassVar[type[ScopedRepository]]
-    permission: ClassVar[str] = "admin.config"
+    read_permission: ClassVar[str]              # e.g. "category.read" — granted to agent, lead, admin
+    write_permission: ClassVar[str] = "admin.config"   # admin-only, unchanged across every subclass
     entity_type: ClassVar[str]                 # for the audited() decorator
 
     def __init__(self, session: AsyncSession) -> None: ...
 
-    @require_permission_via(lambda self: self.permission)   # see note below
+    @require_permission_via(lambda self: self.read_permission)   # see note below
     async def list(self, actor: CurrentActor, filters: Mapping[str, Any] | None = None,
                     limit: int = 50, offset: int = 0) -> list[ModelT]: ...
+    @require_permission_via(lambda self: self.read_permission)
     async def get(self, actor: CurrentActor, id: UUID) -> ModelT: ...     # raises NotFoundError
+    @require_permission_via(lambda self: self.write_permission)
     async def create(self, actor: CurrentActor, data: CreateSchemaT) -> ModelT: ...
+    @require_permission_via(lambda self: self.write_permission)
     async def update(self, actor: CurrentActor, id: UUID, data: UpdateSchemaT) -> ModelT: ...
+    @require_permission_via(lambda self: self.write_permission)
     async def remove(self, actor: CurrentActor, id: UUID) -> ModelT | None:
         """Calls repository.deactivate(id) if repository_cls.has_soft_delete else
         repository.delete(id) — the branch is on the class attribute, not re-decided per call."""
 ```
 
-`create`, `update`, and `remove` are each individually wrapped with `@require_permission(...)` and
-`@audited(entity_type, action)` at definition time in `admin_crud_service.py` — `list`/`get` carry
-only `require_permission` (reads are not audited, matching `data-model.md`'s `audit_logs` schema,
-which has no concept of a read event). `require_permission_via` (a two-line helper alongside
-`require_permission` in `app/core/permissions.py`) exists solely so the permission code can be a
-class attribute instead of a literal, since every subclass except `status_transitions`,
-`kb_articles` (`kb_article.create`/`.publish`), and the ticket-workflow permissions uses the same
-`"admin.config"` string.
+**Read/write permissions are split, not shared** (fixed after `/speckit-analyze` finding D1: the
+original single `permission` attribute gated `list`/`get` behind `admin.config`, which only the
+`admin` role holds — meaning an Agent could not read categories, priorities, ticket statuses, SLA
+policies, teams, or quick replies at all, breaking FR-016/FR-019/FR-029 for its primary actor).
+`list`/`get` require `read_permission` (`{entity}.read`, seeded to `agent`, `lead`, *and* `admin` —
+`data-model.md` §5); `create`/`update`/`remove` require `write_permission` (`admin.config`,
+`admin`-only, unchanged). Every one of the ten generic-CRUD subclasses sets `read_permission` to
+its own `{entity}.read` code (`branch.read`, `department.read`, `user.read`, `role.read`,
+`category.read`, `priority.read`, `ticket_status.read`, `status_transition.read`,
+`sla_policy.read`, `quick_reply.read`, `team.read`); none overrides `write_permission`.
+
+`create`, `update`, and `remove` are each additionally wrapped with `@audited(entity_type,
+action)` at definition time in `admin_crud_service.py` — `list`/`get` are not audited (reads have
+no concept of a before/after change, matching `data-model.md`'s `audit_logs` schema).
+`require_permission_via` (a two-line helper alongside `require_permission` in
+`app/core/permissions.py`) exists so the permission code can be a class attribute instead of a
+literal.
 
 **`UserService(AdminCrudService[User, UserCreate, UserUpdate])`** overrides `create` only, to hash
 `password` into `password_hash` via `passlib`'s Argon2 hasher before delegating to
 `super().create()` — everything else (list/get/update/remove, audit, permission) is inherited
 unchanged.
+
+**`TeamCrudService(AdminCrudService[Team, TeamCreate, TeamUpdate])`** (`read_permission=
+"team.read"`, `has_soft_delete=False` — hard delete, `data-model.md` §0.4) adds exactly one
+bespoke method beyond the inherited CRUD: `async def add_member(self, actor: CurrentActor,
+team_id: UUID, user_id: UUID) -> TeamMember`, wrapped with `@require_permission("admin.config")`
+and `@audited("team_member", "create")` — a team with no way to add a member is otherwise a dead
+end, the same shape of gap D1 fixed one level up (`/speckit-analyze` finding, follow-up).
 
 Every other S1/S2/S3 entity not covered by the ten above (`kb_articles`, `quick_replies` is
 already listed) gets its CRUD permission named `{entity}.read`/`{entity}.create` following the
@@ -489,7 +510,7 @@ code for each is the one named in `contracts/openapi.yaml`'s matching `x-permiss
 **`TicketService`**
 - `async def list(self, actor: CurrentActor, view: TicketView | None, filters: TicketFilters, limit: int, offset: int) -> list[TicketSummary]` — `view` maps to one of F04's five queue definitions via `TicketRepository`
 - `async def get(self, actor: CurrentActor, id: UUID) -> Ticket` — includes computed `sla_first_response_due_at`/`sla_resolution_due_at`/`sla_breach_state` via `SlaService` (never stored)
-- `async def create(self, actor: CurrentActor, data: TicketCreate) -> Ticket` — generates `reference_no` from a DB sequence (`TKT-{year}-{6-digit}`), resolves `sla_policy_id` via `SlaService.resolve_policy`, writes the `created` event, enqueues `categorization_job` (never awaits it — FR-049)
+- `async def create(self, actor: CurrentActor, data: TicketCreate) -> Ticket` — validates `data.category_id` and `data.priority_id` are each currently active, and, if the resolved category/priority is department-scoped (its own `department_id` is not `NULL`), that it matches the ticket's `department_id`; rejects with a localized validation error (422) if either check fails (FR-016) — generates `reference_no` from a DB sequence (`TKT-{year}-{6-digit}`), resolves `sla_policy_id` via `SlaService.resolve_policy`, writes the `created` event, enqueues `categorization_job` (never awaits it — FR-049)
 - `async def update(self, actor: CurrentActor, id: UUID, data: TicketUpdate) -> Ticket`
 - `async def assign(self, actor: CurrentActor, id: UUID, assignee_id: UUID | None, team_id: UUID | None) -> Ticket`
 - `async def add_note(self, actor: CurrentActor, id: UUID, body: str) -> TicketEvent`
@@ -502,7 +523,7 @@ code for each is the one named in `contracts/openapi.yaml`'s matching `x-permiss
 - `async def change_status(self, actor: CurrentActor, ticket_id: UUID, to_status_id: UUID, reason: str | None) -> Ticket` — the ONLY method in the codebase that queries `status_transitions`; raises `IllegalTransitionError(current_status_id, permitted_status_ids)` (→ HTTP 422) when no `(from_status_id, to_status_id)` row matches the ticket's branch/department (falling back to the `department_id IS NULL` default row); raises `PermissionDeniedError` if the matched row's `required_permission` is set and absent from `actor.permissions`; raises a validation error if `requires_reason` is true and `reason` is `None`
 
 **`AssignmentService`**
-- `async def auto_assign_ticket(self, ticket_id: UUID) -> Ticket | None` — round-robins over active `ticket.own`-holding agents in the ticket's department who are not flagged unavailable; returns `None` (ticket stays unassigned) if none are eligible. Called by `categorization_job` after categorization completes, and directly by `TicketService.create` when the ticket has no `assignee_id`/`team_id` set at creation.
+- `async def auto_assign_ticket(self, ticket_id: UUID) -> Ticket | None` — round-robins over active `ticket.own`-holding agents in the ticket's department who are not flagged unavailable; returns `None` (ticket stays unassigned) if none are eligible. Called only by `categorization_job`, after categorization completes — never directly by `TicketService.create` (fixed after `/speckit-analyze` finding F1: `TicketCreate` never accepts `assignee_id` in the first place, and a second, synchronous call site here would risk double-assigning a ticket against the async job's own call).
 
 **`SlaService`**
 - `def compute_due_dates(self, ticket: Ticket, policy: SlaPolicy, branch: Branch) -> SlaDueDates` — pure function; applies `sla_paused_ms` and, if `policy.business_hours_only`, `branch.business_hours`/`branch.timezone`

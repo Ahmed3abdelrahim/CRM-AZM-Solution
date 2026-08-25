@@ -39,7 +39,7 @@ migration-level `NOT NULL` constraint. *(PLAN.md §2, C2)*
 
 ### III. Structural RTL/LTR Parity
 **Enforcement point**: Tailwind configuration established in batch 4a. A scoped grep over
-frontend source only (`web/**/*.{ts,tsx,css}`) for `\b(ml|mr|pl|pr)-` and `\b(left|right)-`
+frontend source only (`frontend/**/*.{ts,tsx,css}`) for `\b(ml|mr|pl|pr)-` and `\b(left|right)-`
 MUST return only lines carrying an inline `rtl-exempt:` justification comment.
 
 Inherently-LTR content — reference numbers, email addresses, phone numbers, IBANs, URLs,

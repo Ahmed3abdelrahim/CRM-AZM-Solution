@@ -623,7 +623,8 @@ FR-060 resolutions:
 
 | Code | Purpose |
 |---|---|
-| `admin.config` | All administrative CRUD named in PLAN.md F10 (branches, departments, users, roles, categories, priorities, statuses, transitions, SLA policies, quick replies) |
+| `admin.config` | **Write-only** for the ten Generic CRUD Pattern entities (branches, departments, users, roles, categories, priorities, ticket statuses, SLA policies, quick replies, teams) plus `status_transitions` (list/create/update/delete subset) — `create`/`update`/`delete`/`deactivate` only. Granted to `admin` only. |
+| `branch.read`, `department.read`, `user.read`, `role.read`, `category.read`, `priority.read`, `ticket_status.read`, `status_transition.read`, `sla_policy.read`, `quick_reply.read`, `team.read` | **Read** for the same eleven entities (`list`/`get`) — split from `admin.config` after `/speckit-analyze` finding D1: an Agent building a ticket-creation form or reply composer needs to read categories, priorities, teams, and quick replies, but never held `admin.config`. Granted to `agent`, `lead`, and `admin`. |
 | `ticket.read`, `ticket.create` | Base CRUD, also the pair F11's acceptance criterion exercises for scoped API keys |
 | `ticket.assign` | Assigning/reassigning a ticket (FR-019, F04) |
 | `ticket.close` | Closing a ticket |
@@ -636,6 +637,5 @@ FR-060 resolutions:
 | `audit.read` | **Seeded now, granted to `admin` per PLAN.md §7** — Tier D accommodation for `specs/006-audit-log-ui`; nothing checks it yet |
 
 Full CRUD-permission naming convention (`{entity}.read`/`.create`/`.update`/`.deactivate`) for
-every other S1/S2/S3 entity not named above (e.g. `kb_article.read`, `kb_article.publish`,
-`quick_reply.read`) is defined once in `plan.md`'s "Generic CRUD Pattern" section rather than
-enumerated per entity here.
+every other S1/S2/S3 entity not named above (e.g. `kb_article.read`, `kb_article.publish`) is
+defined once in `plan.md`'s "Generic CRUD Pattern" section rather than enumerated per entity here.
