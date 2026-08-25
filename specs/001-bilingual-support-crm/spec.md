@@ -194,9 +194,12 @@ breach state reads identically before and after.
    skipping anyone marked unavailable.
 6. **Given** a Team Lead, **When** they override the SLA policy applied to one specific ticket by
    selecting a different existing SLA policy and supplying a reason, **Then** that ticket's
-   deadlines are recalculated from the newly selected policy going forward and the reason is
-   recorded; **When** they attempt the override without supplying a reason, **Then** it is
-   rejected.
+   deadlines are recomputed from the ticket's original creation time under the newly selected
+   policy — applying its accumulated pause time exactly as usual — and the reason is recorded;
+   **When** they attempt the override without supplying a reason, **Then** it is rejected.
+   **Given** an override whose recomputed deadline has already passed, **When** the override is
+   applied, **Then** the ticket is immediately recorded as breached rather than the override being
+   blocked or the breach being suppressed.
 7. *(Tier D — specified, not built)* **Given** a ticket that breaches or is about to breach its SLA,
    **When** the breach is recorded, **Then** the responsible agent or lead receives a notification
    through an external channel (e.g. email) containing the ticket's reference and the breached
@@ -278,8 +281,10 @@ adding new agent-facing capability beyond what Stories 1–2 already provide; on
 enough to prove it.
 
 **Independent Test**: Send an inbound message from an unrecognized sender and confirm both a new
-customer and a new ticket are created from it; then send a second message that quotes an existing
-ticket's reference number and confirm it appends to that ticket instead of creating a new one.
+customer and a new ticket are created from it, scoped to the receiving identifier's configured
+branch/department; then send a second message that quotes an existing ticket from a *different*
+branch's receiving identifier and confirm the ticket's own branch/department wins, with the mismatch
+recorded rather than blocking the append.
 
 **Acceptance Scenarios**:
 
@@ -292,11 +297,24 @@ ticket's reference number and confirm it appends to that ticket instead of creat
    a designated system-default branch and department, and the ticket is flagged as needing triage so
    it surfaces in the Unassigned queue (Story 4) rather than being silently scoped incorrectly.
 3. **Given** an inbound message that quotes an existing ticket's reference number, **When** it is
-   processed, **Then** it is appended to that ticket's timeline rather than creating a new ticket.
-4. **Given** the one functioning channel today (email), **When** a hypothetical new channel is added
+   processed, **Then** it is appended to that ticket's timeline rather than creating a new ticket,
+   and the ticket's own branch and department govern the message — overriding whatever the
+   receiving identifier's channel configuration would otherwise have assigned.
+4. **Given** an inbound message that quotes an existing ticket's reference number, **When** the
+   ticket's branch or department differs from the one the receiving identifier is configured to,
+   **Then** the message is still appended to the ticket, and the mismatch is recorded as a timeline
+   entry rather than blocking the append.
+5. **Given** a customer who has legitimately contacted two different branches, **When** their
+   contact details are looked up for a new inbound message, **Then** matching considers only the
+   customer records already scoped to the branch/department the message resolves to — it never
+   merges or matches across their separate, branch-specific customer records.
+6. **Given** a ticket flagged as needing triage, **When** a staff member corrects its branch or
+   department, **Then** the needs-triage flag is cleared and the correction is recorded on the
+   ticket's timeline with both the old and the new values.
+7. **Given** the one functioning channel today (email), **When** a hypothetical new channel is added
    later, **Then** doing so requires only that channel's own message-normalization behavior — no
    change to how tickets are created or updated.
-5. **Given** a channel not yet built (e.g. WhatsApp, SMS, live chat), **When** it is selected or
+8. **Given** a channel not yet built (e.g. WhatsApp, SMS, live chat), **When** it is selected or
    invoked, **Then** the system responds that it is not yet available, without affecting any other
    channel.
 
@@ -516,7 +534,12 @@ branch/department never sees data from another.
   convert them into new tickets or into updates on existing tickets.
 - **FR-023**: An inbound message MUST be linked to an existing ticket when it references that
   ticket's reference number, or matched to an existing customer when the sender matches a known
-  contact method; otherwise, a new customer record MUST be created from the sender's details.
+  contact method within the branch and department resolved for the message (FR-023a); otherwise, a
+  new customer record MUST be created from the sender's details, scoped to that same branch and
+  department. Contact-method matching MUST NOT be performed across branches: customer identity is
+  per branch/department, not global — the same person legitimately contacting two different
+  branches MUST produce two separate customer records, one per branch/department, never a single
+  record shared or merged across them.
 - **FR-023a**: Each channel's receiving identifier (e.g. a mailbox address or a phone number) MUST
   be configurable to a specific branch and department (and optionally a default category); an
   inbound message MUST be scoped to whatever branch and department its receiving identifier is
@@ -524,6 +547,16 @@ branch/department never sees data from another.
   intake — the resulting customer/ticket MUST instead be scoped to a designated system-default
   branch and department, and MUST be flagged as needing triage so it surfaces in the Unassigned
   queue (FR-026) instead of being silently mis-scoped.
+- **FR-023b**: When an inbound message quotes a valid, existing ticket's reference number, that
+  referenced ticket MUST determine the branch and department the message is scoped to (i.e. the
+  ticket's own branch and department), overriding whatever branch/department the receiving
+  identifier's channel configuration would otherwise have assigned. If the referenced ticket's
+  branch or department differs from the receiving identifier's configured branch or department,
+  that mismatch MUST be recorded as an entry on the ticket's timeline, but MUST NOT prevent the
+  message from being appended to the ticket.
+- **FR-023c**: Correcting a needs-triage ticket's branch or department (per FR-023a) MUST clear the
+  needs-triage flag and MUST record the correction as a timeline entry showing both the old and the
+  new branch/department values.
 - **FR-024**: Adding a new channel in the future MUST require implementing only that channel's own
   message-normalization behavior, with no change to how tickets are created or updated.
 - **FR-025**: A channel not yet built MUST be able to report that it is unavailable without affecting
@@ -571,7 +604,12 @@ branch/department never sees data from another.
 - **FR-039**: A Team Lead MUST be able to override the SLA policy applied to an individual ticket by
   selecting a different existing SLA policy for it; a reason MUST be supplied and recorded for the
   override, and an override without a reason MUST be rejected. Custom, one-off SLA targets outside
-  the organization's configured policies are out of scope.
+  the organization's configured policies are out of scope. Following an override, the ticket's
+  deadlines MUST be recomputed from the ticket's original creation time under the newly selected
+  policy, applying the ticket's accumulated pause time exactly as it would for any other policy
+  resolution (FR-033–FR-035) — the override changes which policy applies, never the ticket's
+  elapsed clock. If recomputing under the new policy means the ticket is immediately in breach, that
+  outcome MUST be permitted and the breach MUST be recorded (FR-037), the same as any other breach.
 - **FR-040** *(Tier D — specified, not built)*: When a ticket breaches or nears breaching its SLA,
   the responsible agent or lead MUST be able to receive a notification through an external channel
   (e.g. email), containing the ticket's reference and the breached target. Breach events are already
@@ -703,7 +741,11 @@ every one of F01–F11, per PLAN.md §5 F12.)*
 - **Permission**: A single, specific capability (e.g. assigning a ticket, closing a ticket, deleting a
   customer, changing configuration) that can be required for an action and granted through a role.
 - **Customer**: The person or organization a ticket is raised on behalf of, with one or more contact
-  methods, in the language they prefer to be addressed in.
+  methods, in the language they prefer to be addressed in. Customer identity is scoped per branch
+  and department, not global: the same person legitimately contacting two different
+  branches/departments is represented as two separate customer records, each with its own
+  independent contact methods and ticket history — there is no shared or merged identity across
+  branches.
 - **Contact Method**: A specific way to reach a customer (phone, email, WhatsApp, other), one of
   which is designated primary.
 - **Category**: A classification applied to a ticket, organized into a hierarchy, optionally specific

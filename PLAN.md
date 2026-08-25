@@ -66,9 +66,9 @@ These are structural. Violating any of them requires a schema rewrite, not a pat
 
 ## 4. Domain Model
 
-### 4.1 Base
-
 ### 4.1 Base columns and scoping patterns
+| `channel_configs` | S1 | Maps a receiving identifier to its owning branch and department |
+| `llm_calls` | S5 | Insert-only; `ticket_id` nullable |
 
 **Every table** carries:
 
@@ -180,10 +180,12 @@ resolved_at       TIMESTAMPTZ       NULL
 closed_at         TIMESTAMPTZ       NULL
 reopened_count    INT DEFAULT 0
 sla_paused_ms     BIGINT DEFAULT 0  -- accumulated pause duration
+needs_triage      BOOLEAN DEFAULT false  -- channel config resolution fell back to default
 ai_suggested_category_id  FK → categories NULL   -- what AI proposed
 ai_category_confidence    NUMERIC(4,3)    NULL
 csat_score        INT NULL          -- RESERVED, Tier D
 csat_comment      TEXT NULL         -- RESERVED, Tier D
+
 ```
 
 **`ticket_events`** — INSERT-only
@@ -209,6 +211,15 @@ new_value (JSONB), body (TEXT, for notes/replies), visibility
 **`audit_logs`** — INSERT-only — `actor_id`, `action`, `entity_type`, `entity_id`, `before` (JSONB), `after` (JSONB), `ip_address`, `user_agent`, `correlation_id`, `created_at`
 
 **`inbound_messages`** — `channel`, `external_id`, `raw_payload` (JSONB), `normalized` (JSONB), `ticket_id` (nullable), `processed_at`, `error` — the channel abstraction's landing table
+
+**`channel_configs`** — `channel` (enum), `identifier` (mailbox address or phone number,
+UNIQUE), `default_category_id` (nullable), `is_active`. Inbound messages resolve branch and
+department by matching the recipient identifier against this table. No match → system default
+branch/department with `tickets.needs_triage = true`.
+
+**`llm_calls`** — INSERT-only — `ticket_id` (nullable), `capability`, `model`,
+`prompt_version`, `input_tokens`, `output_tokens`, `latency_ms`, `fallback_used`,
+`error` (nullable), `correlation_id`, `created_at`
 
 ### 4.3 Status lifecycle (seed data for `status_transitions`)
 
@@ -286,12 +297,19 @@ Each block below is a specification unit. Acceptance criteria are testable witho
 - Threading: match on `external_id` or on `reference_no` found in the subject line.
 - **Email adapter is functional** (IMAP poll via ARQ). **WhatsApp, SMS, live chat adapters exist and raise `NotImplementedError`.**
 - `POST /channels/inbound` accepts a pre-normalized payload with API-key auth — this is how any future channel integrates without touching ticket logic.
-
+- Contact-method matching is scoped to the branch and department resolved from the channel
+  config. Customer identity is per-branch: the same person contacting two branches produces
+  two customer records, by design.
+- A valid quoted ticket reference overrides the channel config for branch, department, and
+  ticket resolution. A branch mismatch is recorded on the timeline but does not block append.
+- Correcting a needs-triage ticket's branch or department clears `needs_triage` and records
+  the correction on the timeline with old and new values.
 **Acceptance.**
 1. Posting a normalized payload for an unknown sender creates a customer and a ticket.
 2. Posting one containing an existing `reference_no` in the subject appends a `ticket_events` row instead of creating a ticket.
 3. Adding a hypothetical new channel requires implementing the interface only — zero changes to ticket creation code.
-
+4. An inbound message quoting a branch-A ticket reference, arriving at a branch-B mailbox,
+   appends to the branch-A ticket and records the mismatch on the timeline.
 ---
 
 ### F04 — Agent Dashboard · Tier M *(tasks and reminders → Tier D)*
@@ -323,6 +341,11 @@ Each block below is a specification unit. Acceptance criteria are testable witho
 - Breach states: `on_track` | `at_risk` (< 25% remaining) | `breached`. Derived, never stored.
 - An ARQ job sweeps every 5 minutes, writes an `sla_breached` event once per ticket per target, and escalates by raising priority one severity level and reassigning to the department's lead.
 - Auto-assignment: round-robin across active agents in the department who have the `ticket.own` permission, skipping anyone flagged unavailable.
+- A lead may override a ticket's SLA by selecting a different existing policy; a reason is
+  required and recorded. Deadlines recompute from the ticket's original creation time under
+  the new policy, applying accumulated pause time. An override that renders the ticket
+  immediately breached is permitted and records the breach — the override changes the target,
+  never the elapsed clock.
 
 **Acceptance.**
 1. A ticket parked in `pending_customer` for two hours shows a resolution deadline two hours later than before.
@@ -358,12 +381,13 @@ Four capabilities, all through the LiteLLM wrapper, all with fallbacks.
 
 | Capability | Model | Trigger | Fallback |
 |---|---|---|---|
-| Auto-categorization | Qwen3-4B | On ticket create | `ai_suggested_category_id = NULL`; agent picks manually |
-| Ticket summary | Qwen3-32B | On demand, and on tickets with > 5 events | Show first 300 chars of description |
+| Auto-categorization | Qwen3-4B | On ticket create | `ai_suggested_category_id = NULL` |
+| Ticket summary | Qwen3-32B | On demand, and on tickets with > 5 events |  first 300 chars of description |
 | Suggested reply | Qwen3-32B | On demand in the reply composer | Composer opens empty |
-| Suggested solution | Retrieval + rerank | On ticket open | Suggestion panel does not render |
+| Suggested solution | Retrieval + rerank | On ticket open | panel does not render |
 
 **Rules.**
+- Every call is recorded in llm_calls with token counts, latency, model name, and prompt version.
 - Categorization returns `{category_id, confidence}`. It **never** sets `category_id` directly — it populates `ai_suggested_category_id`, and the agent accepts or overrides. Acceptance writes an `ai_suggestion_applied` event.
 - Output locale always matches `source_locale`. An Arabic ticket gets an Arabic summary and an Arabic suggested reply.
 - Suggested replies are drafts. They are never auto-sent under any configuration.
@@ -372,11 +396,12 @@ Four capabilities, all through the LiteLLM wrapper, all with fallbacks.
 - Timeout 10s, one retry, then fallback. AI latency never blocks the ticket-create response — categorization runs as an ARQ job.
 
 **Acceptance.**
-1. Stop the vLLM container. Every screen remains fully usable; no error dialogs; all four fallbacks engage.
-2. An Arabic ticket produces an Arabic summary and Arabic suggested reply.
-3. Accepting a suggested category writes an `ai_suggestion_applied` event recording both the suggestion and the confidence.
-4. Ticket creation latency is unaffected by model availability.
-5. A bilingual golden set of 20 tickets is scored for categorization accuracy and the result is recorded.
+1. Point LITELLM_API_BASE at an unreachable endpoint, and separately disconnect the host from the network. Every screen remains fully usable; all four fallbacks engage.
+2. Stop the vLLM container. Every screen remains fully usable; no error dialogs; all four fallbacks engage.
+3. An Arabic ticket produces an Arabic summary and Arabic suggested reply.
+4. Accepting a suggested category writes an `ai_suggestion_applied` event recording both the suggestion and the confidence.
+5. Ticket creation latency is unaffected by model availability.
+6. A bilingual golden set of 20 tickets is scored for categorization accuracy and the result is recorded.
 
 ---
 
@@ -469,7 +494,7 @@ Commit and `/clear` between every batch.
 
 ## 7. Seed Data
 
-2 branches (different timezones and business hours) · 3 departments · 5 users covering all four roles · 20 customers with Arabic and English names · 40 tickets spread across all statuses, priorities, and channels, some breaching · 10 KB articles fully bilingual · category tree 3 levels deep · 4 priorities · 7 statuses with the full transition table · 3 SLA policies · 8 quick replies.
+2 branches (different timezones and business hours) · 3 departments · 5 users covering all four roles · 20 customers with Arabic and English names · 40 tickets spread across all statuses, priorities, and channels, some breaching · 10 KB articles fully bilingual · category tree 3 levels deep · 4 priorities · 7 statuses with the full transition table · 3 SLA policies · 8 quick replies · 2 channel configs, one per department · `report.cross_branch` and `audit.read` granted to admin.
 
 Seeds must be idempotent and runnable via one command.
 
@@ -487,6 +512,9 @@ Logged in `docs/DEBT.md`. Each item is a conscious 48-hour trade, not an oversig
 | No OTel tracing | Full distributed tracing | Phase 2 |
 | Single Compose host | Kubernetes | Before HA requirement |
 | Email polling | Push/webhook ingestion | When volume demands it |
+| Remote Qwen3 endpoint | Self-hosted vLLM on-prem | GPU hardware available |
+| `llm_calls` table | Langfuse | Stack moves to a server |
+| Reranker behind a flag | Always-on reranking | GPU available |
 
 ---
 

@@ -39,4 +39,13 @@
      required.
   3. Cross-branch reporting authorization (Story 10 / FR-060) — resolved as a separate, distinctly
      grantable permission, not inherent to the Administrator role.
+- A second round of gaps identified independently (not `[NEEDS CLARIFICATION]` markers, but
+  under-specified requirements) was closed on 2026-08-25 without renumbering any existing FR:
+  1. Contact-method matching scope and per-branch customer identity — FR-023 (edited in place) and
+     the Customer key entity.
+  2. Precedence between a quoted ticket reference and the receiving identifier's channel
+     configuration — new **FR-023b**.
+  3. SLA override recompute basis (original creation time, accumulated pause, immediate breach
+     permitted) — FR-039 (edited in place).
+  4. Needs-triage flag clearing on correction — new **FR-023c**.
 - Spec is ready for `/speckit.plan`.
