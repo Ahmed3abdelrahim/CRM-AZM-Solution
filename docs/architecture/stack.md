@@ -1,6 +1,20 @@
 # Technology Stack — CRM-AZM-Solution
 
+**Revision 2** — recalibrated for CPU-only laptop development. Changes from rev 1 are marked ⚠ and each carries a repayment trigger in `docs/DEBT.md`.
+
 Authoritative. `/speckit.plan` references this file directly. Any dependency not listed here requires a justification entry in `research.md`.
+
+---
+
+## Runtime target
+
+| | Sprint (now) | Production (later) |
+|---|---|---|
+| Host | Developer laptop, CPU only, no GPU | On-premise server with GPU |
+| Orchestration | Docker Compose, single host | Docker Compose → Kubernetes |
+| Network | Outbound allowed for the LLM provider | Air-gapped, self-hosted models |
+
+The architecture is identical across both. Only configuration differs. That property is the entire point of the LiteLLM gateway and must not be compromised for convenience.
 
 ---
 
@@ -17,7 +31,7 @@ Authoritative. `/speckit.plan` references this file directly. Any dependency not
 | Job queue | ARQ | ^0.26 |
 | HTTP client | httpx | ^0.27 |
 
-Business logic lives in service classes under `app/services/`. Route handlers validate, delegate, serialize — nothing else. Repository layer under `app/repositories/` is the only place that constructs queries, and it is where branch/department scoping is enforced.
+Business logic lives in service classes under `app/services/`. Route handlers validate, delegate, serialize — nothing else. The repository layer under `app/repositories/` is the only place that constructs queries, and is where branch/department scoping is enforced.
 
 ## Data
 
@@ -29,25 +43,74 @@ Business logic lives in service classes under `app/services/`. Route handlers va
 | Cache & queue broker | Redis | 7 |
 | Object storage | MinIO (S3 API) | latest stable |
 
-One datastore for OLTP, full-text, and vectors. No separate vector database in this sprint — `pgvector` at expected volume is not the bottleneck, and operating a second system on-prem is not free.
+One datastore for OLTP, full-text, and vectors. No separate vector database.
 
-Arabic search uses `pg_trgm` similarity plus BGE-M3 semantic search. Do **not** rely on PostgreSQL's Arabic text-search configuration alone; its stemming is weak for Arabic morphology.
+Arabic search uses `pg_trgm` similarity plus dense semantic search. **Do not rely on PostgreSQL's Arabic text-search configuration** — its stemming is inadequate for Arabic morphology.
 
-## AI layer
+---
 
-| Component | Choice | Notes |
+## AI layer ⚠ REVISED
+
+Split by compute profile. Embeddings run locally on CPU; generative work runs on a remote endpoint.
+
+### Gateway — unchanged and non-negotiable
+
+**LiteLLM.** Every generative call routes through it. No vendor SDK imports anywhere in application code. Model names come from configuration:
+
+```
+LITELLM_MODEL_CHAT=<configured>
+LITELLM_MODEL_CLASSIFY=<configured>
+LITELLM_API_BASE=<configured>
+LITELLM_API_KEY=<configured>
+```
+
+Migrating from a remote provider to self-hosted vLLM changes these four values and nothing else.
+
+### Generative — remote endpoint ⚠
+
+| Capability | Model family | Notes |
 |---|---|---|
-| Gateway | LiteLLM | **Every** model call routes through this. No vendor SDK imports anywhere in application code. |
-| Serving | vLLM (OpenAI-compatible endpoint) | Self-hosted on-prem |
-| Chat / assist model | Qwen3-32B or Qwen3-30B-A3B | Configurable by name |
-| Classification model | Qwen3-4B | Auto-categorization and routing — ~50× cheaper than sending everything to the large model |
-| Embeddings | BGE-M3 | Strong multilingual, notably Arabic |
-| Reranker | bge-reranker-v2-m3 | KB retrieval quality |
-| Tracing | Langfuse (self-hosted) | Token counts, latency, prompt versions |
+| Summary, suggested reply | Qwen3-32B (or 30B-A3B) via OpenRouter / Together | Same family as the eventual self-hosted target |
+| Auto-categorization | Qwen3-4B or Qwen3-8B | Short output; cheapest tier is sufficient |
 
-**Hardware note:** Qwen3-32B at usable latency needs roughly 2×A100 80GB or 2×L40S in FP8/AWQ. If that is not confirmed on-prem before the sprint, drop to Qwen3-14B or point LiteLLM at a cloud endpoint for the demo. Because everything routes through LiteLLM, this is a configuration change and touches no application code.
+**Use the Qwen3 family, not GPT or Claude.** Prompts tuned against Qwen3 now transfer unchanged to self-hosted Qwen3 later. A different family means re-tuning all four prompts when the hardware arrives.
 
-Every AI feature has a deterministic fallback: categorization falls back to "Uncategorized", summaries fall back to the first N characters of the description, suggested replies and solutions simply do not render. The system stays fully usable with the model stopped.
+Generative inference on laptop CPU is not viable: 8–15 tok/s means a 200-token reply takes 20–30 seconds. Rejected.
+
+### Embeddings — local CPU ⚠
+
+Choose by available laptop RAM. **Fix this before batch 4g** — the `pgvector` column dimension is set at migration time and is not casually changed mid-build.
+
+| Laptop RAM | Model | Params | Dimension | Loaded size |
+|---|---|---|---|---|
+| ≥ 16 GB | `BAAI/bge-m3` (ONNX int8) | 568M | **1024** | ~600 MB |
+| < 16 GB | `intfloat/multilingual-e5-small` | 118M | **384** | ~120 MB |
+
+Run via `sentence-transformers` with ONNX runtime, or `fastembed`. One forward pass per query is 200–400 ms on CPU — acceptable for interactive search. Indexing 10 seeded articles takes a few seconds, one time.
+
+### Reranking — local CPU, optional ⚠
+
+`bge-reranker-v2-m3` on CPU adds 300–800 ms per query. Enable behind a feature flag. When disabled, reciprocal-rank-fused order is returned — already the documented fallback in `PLAN.md` F06.
+
+### Observability ⚠ Langfuse removed
+
+Current Langfuse requires its own Postgres, ClickHouse, and S3. On a laptop already running PG, Redis, MinIO, the API, and a Next dev server, that is the component that makes startup unusable.
+
+Replaced by an `llm_calls` table:
+
+```
+id, ticket_id (nullable), capability, model, prompt_version,
+input_tokens, output_tokens, latency_ms, fallback_used,
+error (nullable), correlation_id, created_at
+```
+
+Written by the LiteLLM wrapper on every call, success or failure. Same telemetry story, zero infrastructure cost. Langfuse returns when the stack moves to a server.
+
+### Fallbacks — unchanged
+
+Every AI feature stays deterministic when the model is unreachable. Categorization → `NULL` suggestion, agent picks manually. Summary → first 300 characters. Suggested reply → empty composer. Suggested solution → panel does not render. **With the LLM endpoint unreachable, every screen remains fully usable.** This is a hard acceptance criterion, and it now also covers loss of internet connectivity — which matters, because the demo machine is no longer self-contained.
+
+---
 
 ## Frontend
 
@@ -61,29 +124,22 @@ Every AI feature has a deterministic fallback: categorization falls back to "Unc
 | Data fetching | TanStack Query | ^5 |
 | Forms | react-hook-form + zod | latest |
 
-**RTL is structural.** Use Tailwind logical properties (`ms-*`, `me-*`, `ps-*`, `pe-*`, `start-*`, `end-*`) exclusively. Never `ml-*`, `mr-*`, `pl-*`, `pr-*`, `left-*`, `right-*`. One stylesheet serves both directions; `dir` is set on `<html>` from the active locale. There is no separate Arabic stylesheet and no mirroring build step.
+**RTL is structural.** Tailwind logical properties only — `ms-*`, `me-*`, `ps-*`, `pe-*`, `start-*`, `end-*`. Never `ml-*`, `mr-*`, `pl-*`, `pr-*`, `left-*`, `right-*`. One stylesheet serves both directions; `dir` is set on `<html>` from the active locale. No separate Arabic stylesheet, no mirroring build step.
 
-Arabic typography: use a font stack with proper Arabic coverage (IBM Plex Sans Arabic, Noto Sans Arabic, or Cairo). Latin-only fonts fall back to system Arabic rendering and look broken.
+Arabic typography: IBM Plex Sans Arabic, Noto Sans Arabic, or Cairo. A Latin-only stack falling back to system Arabic rendering looks broken.
 
 ## Auth & security
 
 | Component | Choice | Notes |
 |---|---|---|
-| Authentication | FastAPI + JWT (access + refresh) | Keycloak is the production target; deferred as documented debt |
+| Authentication | FastAPI + JWT (access 15 min, refresh 7 days) | Keycloak is the production target; deferred as documented debt |
 | Password hashing | Argon2 via passlib | |
 | Authorization | Role + permission checks in service layer | UI hiding is cosmetic only |
-| Machine clients | API keys with scoped permissions | For Tier S integrations |
+| Machine clients | API keys, scoped, stored hashed | Tier S integrations |
 
-## Runtime & observability
+## Logging
 
-| Component | Choice |
-|---|---|
-| Orchestration | Docker Compose (single host, on-prem) |
-| Logging | structlog, JSON output, correlation id propagated end to end |
-| LLM observability | Langfuse |
-| Error tracking | Sentry (self-hosted) — optional for MVP |
-
-Full OpenTelemetry tracing and Prometheus/Grafana are Phase 2. Correlation ids are propagated from the first commit so instrumenting later does not require touching every call site.
+structlog, JSON output, correlation id propagated end to end from ingestion through response. Full OpenTelemetry and Prometheus/Grafana are Phase 2 — correlation ids exist from the first commit so instrumenting later does not require touching every call site.
 
 ## Testing
 
@@ -91,13 +147,29 @@ Full OpenTelemetry tracing and Prometheus/Grafana are Phase 2. Correlation ids a
 |---|---|
 | Business rules with branching logic | pytest — status transition legality, permission checks, SLA computation, tenant scoping |
 | CRUD passthroughs | No tests |
-| AI features | Small bilingual golden dataset, evaluated by script; not unit tests |
-| API contracts | Schemathesis against the OpenAPI spec — optional if time permits |
+| AI features | Bilingual golden set of 20 tickets, scored by script |
+| API contracts | Schemathesis against OpenAPI — only if time permits |
 
-Testcontainers and a CI contract-test gate are the production target and are logged in `docs/DEBT.md`.
+---
+
+## Laptop resource budget
+
+Approximate steady-state footprint. Verify against available RAM before batch 4a.
+
+| Service | RAM |
+|---|---|
+| PostgreSQL 16 | ~250 MB |
+| Redis 7 | ~50 MB |
+| MinIO | ~200 MB |
+| FastAPI + embedding model | ~900 MB (BGE-M3 int8) / ~400 MB (e5-small) |
+| ARQ worker | ~200 MB |
+| Next.js dev server | ~600 MB |
+| **Total** | **~2.2 GB** / ~1.7 GB |
+
+If this is tight: run the frontend outside Docker with `npm run dev`, and drop MinIO in favour of a mounted volume behind the same storage interface.
 
 ---
 
 ## Explicitly not in this stack
 
-Keycloak, Kubernetes, Qdrant, Celery, RabbitMQ, Elasticsearch, a separate vector DB, GraphQL, or any ORM other than SQLAlchemy. If the plan or the implementation reaches for one of these, it is a deviation requiring justification.
+Keycloak, Kubernetes, Qdrant, Celery, RabbitMQ, Elasticsearch, a separate vector database, GraphQL, Langfuse, local vLLM, or any ORM other than SQLAlchemy. If the plan or the implementation reaches for one of these, it is a deviation requiring justification in `research.md`.
