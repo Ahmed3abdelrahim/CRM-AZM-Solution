@@ -42,13 +42,28 @@ docker compose exec backend python -m app.seed.seed
 
 Idempotent — safe to re-run. Produces PLAN.md §7's exact seed set: 2 branches (different
 timezones/business hours), 3 departments, 5 users across all four roles, 20 bilingual customers,
-40 tickets across every status/priority/channel (some pre-breaching), 10 fully bilingual KB
-articles, a 3-level category tree, 4 priorities, 7 statuses with the full `status_transitions`
-table (`data-model.md` §4), 3 SLA policies, 8 quick replies, 2 `channel_configs` rows (one per
-department), and the seeded permission set (`data-model.md` §5) — including `audit.read` and
-`report.cross_branch` granted to the seeded `admin` user, per PLAN.md §7.
+40 tickets across every status/priority/channel (some pre-breaching), each with a plausible
+`ticket_events` timeline (a `created` event, `status_changed` events along a legal path from
+`new` to its current status, an `assigned` event where it has an assignee, and at least one
+`note_added`/`reply_sent` event — F02's "the timeline is the ticket's history"), 10 fully
+bilingual KB articles, a 3-level category tree, 4 priorities, 7 statuses with the full
+`status_transitions` table (`data-model.md` §4), 3 SLA policies, 8 quick replies, 2
+`channel_configs` rows (one per department), and the seeded permission set (`data-model.md` §5)
+— including `audit.read` and `report.cross_branch` granted to the seeded `admin` user, per
+PLAN.md §7.
 
 **Expected**: running the command twice produces identical row counts both times.
+
+**Seed credentials** (`backend/app/seed/seed.py`, `USERS`/`SEED_PASSWORD`) — all five share one
+password, `ChangeMe#2026`:
+
+| Email | Role | Branch / Department |
+|---|---|---|
+| `admin@azm-crm.example` | `admin` | Cairo — all three departments |
+| `mona.elsherif@azm-crm.example` | `lead` | Cairo / Customer Support |
+| `ahmed.hassan@azm-crm.example` | `agent` | Cairo / Customer Support |
+| `layla.mahmoud@azm-crm.example` | `agent` | Cairo / Sales |
+| `khalid.alotaibi@azm-crm.example` | `agent` | Riyadh / Customer Support |
 
 ## 4. Validate the golden journey (spec.md Story 1–5, PLAN.md §1.2)
 

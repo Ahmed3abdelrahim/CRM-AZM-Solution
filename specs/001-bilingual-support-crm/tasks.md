@@ -542,7 +542,7 @@ keys, seed data.
       (depends on T130)
 - [ ] T135 [P] Create `frontend/app/[locale]/(agent)/admin/` API-key management screen (issue,
       list, revoke) (depends on T131)
-- [ ] T136 Create `backend/app/seed/seed.py` — idempotent seed matching PLAN.md §7 exactly: 2
+- [X] T136 Create `backend/app/seed/seed.py` — idempotent seed matching PLAN.md §7 exactly: 2
       branches (different timezones/business hours), 3 departments, 5 users covering all four
       roles, 20 bilingual customers, 40 tickets spread across every status/priority/channel (some
       pre-breaching), 10 fully bilingual KB articles, a 3-level category tree, 4 priorities, 7
@@ -562,7 +562,7 @@ keys, seed data.
       depends on T030 (full schema) and, transitively, on every batch's models being complete —
       in practice this is the last task started, after Batch 4h's T116 (depends on T030, T136 is
       scheduled last in this batch)
-- [ ] T137 Run `docker compose exec backend python -m app.seed.seed` twice in succession and
+- [X] T137 Run `docker compose exec backend python -m app.seed.seed` twice in succession and
       diff row counts — must be identical, confirming idempotency (depends on T136)
 
 **Gate (PLAN.md §6)**: The full demo path works end-to-end on freshly seeded data — an inbound
