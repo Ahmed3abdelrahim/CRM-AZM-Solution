@@ -1,0 +1,11 @@
+{
+  "Dashboard": {
+    "title": "لوحة التحكم",
+    "sampleReferenceLabel": "رقم مرجعي تجريبي",
+    "sampleReferenceValue": "TKT-2026-000123"
+  },
+  "LocaleSwitcher": {
+    "ar": "العربية",
+    "en": "English"
+  }
+}
