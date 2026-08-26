@@ -4,8 +4,10 @@ from collections.abc import Awaitable, Callable
 
 import structlog
 from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
+from app.config import settings
 from app.core.errors import register_error_handlers
 
 structlog.configure(
@@ -22,6 +24,19 @@ logger = structlog.get_logger(__name__)
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Bilingual Support CRM API")
+
+    # F12 — the Next.js frontend (a separate origin/port) calls this API directly from the
+    # browser; without this, every browser fetch from app/ fails CORS before ever reaching a
+    # route, silently breaking "the entire agent interface usable" regardless of how correct
+    # the API itself is. `CORS_ORIGINS` is a comma-separated list (app/config.py), defaulting to
+    # the frontend's local dev origin.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[origin.strip() for origin in settings.CORS_ORIGINS.split(",") if origin.strip()],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     @app.middleware("http")
     async def correlation_id_middleware(

@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     SYSTEM_DEFAULT_BRANCH_ID: UUID
     SYSTEM_DEFAULT_DEPARTMENT_ID: UUID
 
+    CORS_ORIGINS: str = "http://localhost:3000"
+
 
 @lru_cache
 def get_settings() -> Settings:

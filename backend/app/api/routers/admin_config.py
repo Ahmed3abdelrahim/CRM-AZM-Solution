@@ -19,6 +19,7 @@ from app.schemas.role import (
     RoleCreate,
     RoleUpdate,
 )
+from app.schemas.quick_reply import QuickReply, QuickReplyCreate, QuickReplyUpdate
 from app.schemas.team import Team, TeamCreate, TeamMemberCreate, TeamUpdate
 from app.schemas.ticket_taxonomy import (
     Category,
@@ -41,6 +42,7 @@ from app.services.admin_crud_service import (
     CategoryCrudService,
     DepartmentCrudService,
     PriorityCrudService,
+    QuickReplyCrudService,
     RoleCrudService,
     TeamCrudService,
     TicketStatusCrudService,
@@ -362,6 +364,25 @@ async def add_team_member(
     service = TeamCrudService(session, actor.scope)
     await service.add_member(actor, id, data.user_id)
     return None
+
+
+# ---------------------------------------------------------------- Batch 4e: quick replies (F04)
+register_admin_crud_routes(
+    router,
+    path="/quick-replies",
+    service_cls=QuickReplyCrudService,
+    response_schema=QuickReply,
+    create_schema=QuickReplyCreate,
+    update_schema=QuickReplyUpdate,
+    remove_style="delete",
+    operation_ids={
+        "list": "listQuickReplies",
+        "create": "createQuickReply",
+        "get": "getQuickReply",
+        "update": "updateQuickReply",
+        "remove": "deleteQuickReply",
+    },
+)
 
 
 # ---------------------------------------------------------------- status-transitions (no single-get)

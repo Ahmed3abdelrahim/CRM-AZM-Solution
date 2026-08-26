@@ -14,6 +14,7 @@ from app.models.branch import Branch
 from app.models.category import Category
 from app.models.department import Department
 from app.models.priority import Priority
+from app.models.quick_reply import QuickReply
 from app.models.role import Permission, Role, RolePermission
 from app.models.team import Team, TeamMember
 from app.models.ticket_status import TicketStatus
@@ -235,3 +236,19 @@ class TeamCrudService(AdminCrudService[Team, Any, Any]):
         self.session.add(member)
         await self.session.flush()
         return member
+
+
+class _QuickReplyRepository(ScopedRepository[QuickReply]):
+    model = QuickReply
+    scoping_mode = ScopingMode.S1_FULL
+    has_soft_delete = False
+
+
+class QuickReplyCrudService(AdminCrudService[QuickReply, Any, Any]):
+    """Thin CRUD subclass — F04's quick-reply picker (T086) consumes `list` directly, filtering
+    by `category_id`/the ticket's `source_locale` client-side; no bespoke method needed here
+    (data-model.md §0.4: no `is_active`/`sort_order` — hard DELETE)."""
+
+    repository_cls = _QuickReplyRepository
+    entity_type = "quick_reply"
+    read_permission = "quick_reply.read"

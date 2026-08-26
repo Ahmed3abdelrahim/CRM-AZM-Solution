@@ -244,39 +244,76 @@ locale.
 **Contents (PLAN.md §6)**: F04 + F12 — dashboard, queues, filters, quick replies, Arabic UI
 shell.
 
-- [ ] T080 [P] In `backend/app/services/admin_crud_service.py`, add `QuickReplyCrudService`
+- [X] T080 [P] In `backend/app/services/admin_crud_service.py`, add `QuickReplyCrudService`
       thin subclass (`read_permission="quick_reply.read"`, `has_soft_delete=False` — hard
       delete, `data-model.md` §0.4) (depends on T048)
-- [ ] T081 [P] Create `backend/app/schemas/quick_reply.py` — `QuickReply`, `QuickReplyCreate`,
+- [X] T081 [P] Create `backend/app/schemas/quick_reply.py` — `QuickReply`, `QuickReplyCreate`,
       `QuickReplyUpdate` per `contracts/openapi.yaml` (depends on T005)
-- [ ] T082 Add placeholder-substitution logic (`{{customer_name}}`, `{{reference_no}}`,
+- [X] T082 Add placeholder-substitution logic (`{{customer_name}}`, `{{reference_no}}`,
       `{{agent_name}}`) to `backend/app/services/customer_service.py`'s sibling — create
       `backend/app/services/quick_reply_render.py` with one pure function
       `render(quick_reply: QuickReply, ticket: Ticket) -> str`, called from the frontend's reply
       composer via a small `GET /quick-replies?category_id=` + client-side substitution, OR from
       a dedicated endpoint — this task creates the pure function only; wiring is T086 below
       (depends on T081)
-- [ ] T083 Add `/quick-replies` routes to `backend/app/api/routers/admin_config.py` (depends on
+- [X] T083 Add `/quick-replies` routes to `backend/app/api/routers/admin_config.py` (depends on
       T080, T081)
-- [ ] T084 Wire the Batch 4e router addition into `backend/app/api/router.py` (depends on T083)
-- [ ] T085 [P] Create `frontend/app/[locale]/(agent)/dashboard/page.tsx` (replacing Batch 4a's
+- [X] T084 Wire the Batch 4e router addition into `backend/app/api/router.py` (depends on T083)
+      — already satisfied: `admin_config.router` was wired into `api_router` in Batch 4b (T057);
+      the new `/quick-replies` routes live in that same file/router, so no further change to
+      `router.py` itself was needed.
+- [X] T085 [P] Create `frontend/app/[locale]/(agent)/dashboard/page.tsx` (replacing Batch 4a's
       placeholder) — the five views (My open tickets / My team's queue / Unassigned / Breaching
       soon / Recently closed) via `GET /tickets?view=`, plus the shared filter set with
       URL-encoded, shareable filter state (FR-027) (depends on T072, T043)
-- [ ] T086 In `frontend/app/[locale]/(agent)/tickets/[id]/page.tsx`, add the quick-reply picker
+- [X] T086 In `frontend/app/[locale]/(agent)/tickets/[id]/page.tsx`, add the quick-reply picker
       (matching the ticket's `source_locale`, placeholders filled via T082's logic exposed
       through the reply composer) and visually distinguish internal notes from customer-facing
       replies (FR-030) (depends on T079, T082)
-- [ ] T087 [P] Verify (no new component expected) that every color/spacing/margin utility
+- [X] T087 [P] Verify (no new component expected) that every color/spacing/margin utility
       introduced across `frontend/app/` and `frontend/components/` so far uses Tailwind logical
       properties only — run `grep -rE "\b(ml|mr|pl|pr|left|right)-" frontend/` and fix any hit
       found outside an `rtl-exempt:`-commented, `<LtrText>`-wrapped line (constitution Principle
-      III / PLAN.md C3) (depends on T085, T086)
+      III / PLAN.md C3) (depends on T085, T086) — zero hits in `frontend/app/` and
+      `frontend/components/`.
 
 **Gate (PLAN.md §6)**: Switching the UI language to Arabic flips the entire dashboard to RTL with
 no layout breakage and no page reload; the "Breaching soon" view returns tickets ordered by time
 remaining ascending; an internal note is never present in any response the customer portal would
 receive (verified once Batch 4i's portal exists — cross-checked again there).
+
+**Gate verification (this run)**: `tsc --noEmit`, `npm run build`, `pytest backend/tests` (18/18),
+`scripts/check-i18n-literals.sh`, and the T087 grep all pass clean. Additionally driven live —
+`docker compose` stack already running (postgres/redis/minio/backend/arq-worker/frontend),
+logged in as the existing `admin@example.com` test user, headless-Chromium (Playwright) against
+`http://localhost:3000` — confirming: `<html dir>` flips `ltr`↔`rtl` on locale switch with a
+single navigation entry (no full reload); dashboard views/filters render correctly mirrored in
+both directions at 1280×950; the quick-reply picker (T086) renders, filters to the ticket's
+category, and its substituted body matches `quick_reply_render.py`'s `render()` output
+byte-for-byte; internal vs. customer-visible timeline entries are visibly distinguished (amber vs.
+sky); zero browser console errors on either locale. `GET /tickets?view=breaching_soon` returns
+`200 []` — correctly empty, since no `sla_policies` exist yet (Batch 4f).
+
+Four defects were found and fixed during this live verification, all necessary for "the entire
+agent interface usable" but outside T080–T087's own file list, so recorded separately from the
+task checklist above:
+1. **No CORS middleware** (`backend/app/main.py`, since Batch 4a/T039) — every browser fetch from
+   the frontend's origin to the API was silently blocked, so no page could ever load real data.
+   Added `CORSMiddleware` gated by a new `CORS_ORIGINS` setting (`app/config.py`,
+   `.env.example`), default `http://localhost:3000`.
+2. **`Ticket` response schema missing `customer`** (`backend/app/schemas/ticket.py`, since Batch
+   4d/T071) — `contracts/openapi.yaml`'s `Ticket.customer` was never declared on the Pydantic
+   model, so `TicketService.get()`'s FR-028 customer-attach was silently dropped by response
+   serialization; broke both T079's existing "inline customer context" section and this batch's
+   `{{customer_name}}` quick-reply substitution. Added the missing field.
+3. **`LocaleSwitcher` dropped the query string** (`frontend/components/locale-switcher.tsx`, since
+   Batch 4a/T045) — switching language reset this batch's URL-encoded filter/view state (FR-027).
+   Now preserves `useSearchParams()` across the locale-prefixed path swap.
+4. **Mixed-locale content inherited the page's `dir` instead of its own** — an English-locale
+   ticket's subject/description, this batch's composer textarea and quick-reply-filled body, and
+   timeline event bodies/reasons visually reordered (leading punctuation) inside an Arabic-`dir`
+   page. Added `dir="auto"` (browser-native per-content-block direction inference) to each; no
+   Tailwind utility involved, so this doesn't touch T087's physical-vs-logical-properties check.
 
 ---
 

@@ -7,10 +7,34 @@ import { useTranslations } from "next-intl";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { LtrText } from "@/components/ltr-text";
-import { api, ApiError } from "@/lib/api-client";
+import { api, ApiError, type QuickReply, type Ticket, type User } from "@/lib/api-client";
+
+/** F04 (T086) — substitutes `{{customer_name}}`/`{{reference_no}}`/`{{agent_name}}` into a
+ * quick reply's body, matching the ticket's `source_locale` — the client-side mirror of
+ * `backend/app/services/quick_reply_render.py`'s pure `render()` (T082); `{{agent_name}}`
+ * resolves the ticket's current assignee the same way that function does. */
+function renderQuickReply(quickReply: QuickReply, ticket: Ticket, users: User[]): string {
+  const body = ticket.source_locale === "ar" ? quickReply.body_ar : quickReply.body_en;
+  const customerName = ticket.customer
+    ? ticket.source_locale === "ar"
+      ? ticket.customer.full_name_ar
+      : ticket.customer.full_name_en ?? ticket.customer.full_name_ar
+    : "";
+  const assignee = ticket.assignee_id ? users.find((u) => u.id === ticket.assignee_id) : undefined;
+  const agentName = assignee
+    ? ticket.source_locale === "ar"
+      ? assignee.full_name_ar
+      : assignee.full_name_en
+    : "";
+  return body
+    .replaceAll("{{customer_name}}", customerName)
+    .replaceAll("{{reference_no}}", ticket.reference_no)
+    .replaceAll("{{agent_name}}", agentName);
+}
 
 /** T079 — ticket detail, status-change control (surfacing the localized illegal-transition
- * error), assignment, timeline, notes/replies, attachments, inline customer context (FR-028). */
+ * error), assignment, timeline, notes/replies, attachments, inline customer context (FR-028).
+ * T086 adds the quick-reply picker to the composer and visually distinguishes internal notes. */
 export default function TicketDetailPage() {
   const t = useTranslations("TicketDetail");
   const params = useParams<{ id: string }>();
@@ -28,6 +52,14 @@ export default function TicketDetailPage() {
   const statusesQuery = useQuery({
     queryKey: ["ticket-statuses"],
     queryFn: api.listTicketStatuses,
+  });
+  const quickRepliesQuery = useQuery({
+    queryKey: ["quick-replies"],
+    queryFn: api.listQuickReplies,
+  });
+  const usersQuery = useQuery({
+    queryKey: ["users"],
+    queryFn: api.listUsers,
   });
 
   const invalidateTicket = () => {
@@ -58,10 +90,12 @@ export default function TicketDetailPage() {
         {t("backLink")}
       </Link>
 
-      <h1 className="mt-2 text-2xl font-bold">
+      <h1 className="mt-2 text-2xl font-bold" dir="auto">
         <LtrText>{ticket.reference_no}</LtrText> — {ticket.subject}
       </h1>
-      <p className="mt-1 text-sm text-gray-600">{ticket.description}</p>
+      <p className="mt-1 text-sm text-gray-600" dir="auto">
+        {ticket.description}
+      </p>
 
       <section className="mt-4">
         <h2 className="font-semibold">{t("customerTitle")}</h2>
@@ -98,7 +132,13 @@ export default function TicketDetailPage() {
 
       <section className="mt-6">
         <h2 className="font-semibold">{t("composerTitle")}</h2>
-        <ComposerForm ticketId={ticketId} onSent={invalidateTicket} />
+        <ComposerForm
+          ticketId={ticketId}
+          ticket={ticket}
+          quickReplies={quickRepliesQuery.data ?? []}
+          users={usersQuery.data ?? []}
+          onSent={invalidateTicket}
+        />
       </section>
 
       <section className="mt-6">
@@ -108,13 +148,32 @@ export default function TicketDetailPage() {
         ) : (
           <ul className="mt-2 flex flex-col gap-1">
             {eventsQuery.data?.map((event) => (
-              <li key={event.id} className="rounded border p-2 text-sm">
+              <li
+                key={event.id}
+                className={
+                  event.visibility === "internal"
+                    ? "rounded border border-amber-300 bg-amber-50 p-2 text-sm"
+                    : "rounded border border-sky-300 bg-sky-50 p-2 text-sm"
+                }
+              >
                 <span className="font-semibold">{event.event_type}</span>{" "}
-                <span className="text-gray-600">
-                  ({event.visibility === "internal" ? t("visibilityInternal") : t("visibilityCustomer")})
+                <span
+                  className={
+                    event.visibility === "internal"
+                      ? "rounded bg-amber-200 px-1 text-xs text-amber-900"
+                      : "rounded bg-sky-200 px-1 text-xs text-sky-900"
+                  }
+                >
+                  {event.visibility === "internal" ? t("visibilityInternal") : t("visibilityCustomer")}
                 </span>
-                {event.body && <p>{event.body}</p>}
-                {event.reason && <p className="text-gray-600">{event.reason}</p>}
+                {event.body && (
+                  <p dir="auto">{event.body}</p>
+                )}
+                {event.reason && (
+                  <p className="text-gray-600" dir="auto">
+                    {event.reason}
+                  </p>
+                )}
                 <LtrText>{new Date(event.created_at).toISOString()}</LtrText>
               </li>
             ))}
@@ -255,10 +314,27 @@ function AssignForm({
   );
 }
 
-function ComposerForm({ ticketId, onSent }: { ticketId: string; onSent: () => void }) {
+function ComposerForm({
+  ticketId,
+  ticket,
+  quickReplies,
+  users,
+  onSent,
+}: {
+  ticketId: string;
+  ticket: Ticket;
+  quickReplies: QuickReply[];
+  users: User[];
+  onSent: () => void;
+}) {
   const t = useTranslations("TicketDetail");
   const [body, setBody] = useState("");
   const [visibility, setVisibility] = useState<"internal" | "customer">("internal");
+  const [quickReplyId, setQuickReplyId] = useState("");
+
+  const applicableQuickReplies = quickReplies.filter(
+    (quickReply) => quickReply.category_id === null || quickReply.category_id === ticket.category_id,
+  );
 
   const sendMutation = useMutation({
     mutationFn: () =>
@@ -277,9 +353,33 @@ function ComposerForm({ ticketId, onSent }: { ticketId: string; onSent: () => vo
   return (
     <form onSubmit={handleSubmit} className="mt-2 flex flex-col gap-2 rounded border p-3">
       <label className="flex flex-col gap-1">
+        <span className="text-sm text-gray-600">{t("quickReplyLabel")}</span>
+        <select
+          value={quickReplyId}
+          onChange={(event) => {
+            const id = event.target.value;
+            setQuickReplyId(id);
+            const quickReply = applicableQuickReplies.find((candidate) => candidate.id === id);
+            if (quickReply) {
+              setBody(renderQuickReply(quickReply, ticket, users));
+              setVisibility("customer");
+            }
+          }}
+          className="rounded border px-3 py-2"
+        >
+          <option value="">{t("quickReplyPlaceholder")}</option>
+          {applicableQuickReplies.map((quickReply) => (
+            <option key={quickReply.id} value={quickReply.id}>
+              {quickReply.label_ar} / {quickReply.label_en}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="flex flex-col gap-1">
         <span className="text-sm text-gray-600">{t("composerBodyLabel")}</span>
         <textarea
           required
+          dir="auto"
           value={body}
           onChange={(event) => setBody(event.target.value)}
           className="rounded border px-3 py-2"

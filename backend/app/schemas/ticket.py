@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.customer import Customer
+
 BreachState = Literal["on_track", "at_risk", "breached"]
 
 
@@ -34,6 +36,7 @@ class Ticket(TicketSummary):
     branch_id: UUID
     department_id: UUID
     customer_id: UUID
+    customer: Customer | None = None
     description: str
     sla_policy_id: UUID | None = None
     first_response_at: datetime | None = None

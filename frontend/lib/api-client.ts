@@ -175,6 +175,65 @@ export interface TicketCreate {
   team_id?: string | null;
 }
 
+export interface Category {
+  id: string;
+  label_ar: string;
+  label_en: string;
+  branch_id: string;
+  department_id: string | null;
+  parent_id: string | null;
+  is_active: boolean;
+  sort_order: number;
+}
+
+export interface Priority {
+  id: string;
+  label_ar: string;
+  label_en: string;
+  branch_id: string;
+  department_id: string | null;
+  code: string;
+  severity: number;
+  color: string;
+}
+
+export interface User {
+  id: string;
+  branch_id: string;
+  department_id: string | null;
+  email: string;
+  full_name_ar: string;
+  full_name_en: string;
+  phone: string | null;
+  locale: Locale;
+  is_active: boolean;
+}
+
+export interface QuickReply {
+  id: string;
+  label_ar: string;
+  label_en: string;
+  branch_id: string;
+  department_id: string;
+  category_id: string | null;
+  body_ar: string;
+  body_en: string;
+}
+
+export type TicketView = "my_open" | "team_queue" | "unassigned" | "breaching_soon" | "recently_closed";
+
+export interface TicketListFilters {
+  view?: TicketView;
+  status_id?: string;
+  priority_id?: string;
+  category_id?: string;
+  assignee_id?: string;
+  channel?: string;
+  date_from?: string;
+  date_to?: string;
+  q?: string;
+}
+
 export class ApiError extends Error {
   status: number;
   messageAr?: string;
@@ -292,6 +351,35 @@ export const api = {
   },
   listTicketStatuses(): Promise<TicketStatus[]> {
     return request(`/ticket-statuses${searchParams({ limit: 200 })}`);
+  },
+  listCategories(): Promise<Category[]> {
+    return request(`/categories${searchParams({ limit: 200 })}`);
+  },
+  listPriorities(): Promise<Priority[]> {
+    return request(`/priorities${searchParams({ limit: 200 })}`);
+  },
+  listUsers(): Promise<User[]> {
+    return request(`/users${searchParams({ limit: 200 })}`);
+  },
+  listQuickReplies(): Promise<QuickReply[]> {
+    return request(`/quick-replies${searchParams({ limit: 200 })}`);
+  },
+  listTickets(filters: TicketListFilters, limit = 50, offset = 0): Promise<TicketSummary[]> {
+    return request(
+      `/tickets${searchParams({
+        view: filters.view,
+        status_id: filters.status_id,
+        priority_id: filters.priority_id,
+        category_id: filters.category_id,
+        assignee_id: filters.assignee_id,
+        channel: filters.channel,
+        date_from: filters.date_from,
+        date_to: filters.date_to,
+        q: filters.q,
+        limit,
+        offset,
+      })}`,
+    );
   },
   getTicket(id: string): Promise<Ticket> {
     return request(`/tickets/${id}`);
