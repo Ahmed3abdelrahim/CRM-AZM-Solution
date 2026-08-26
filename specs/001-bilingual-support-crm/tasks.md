@@ -140,14 +140,14 @@ a token pair; any subsequent admin mutation (e.g. `POST /branches`) produces exa
 
 **Contents (PLAN.md §6)**: F01 — customers, contact methods, notes, attachments, history.
 
-- [ ] T060 [P] Create `backend/app/schemas/customer.py` — `Customer`, `CustomerCreate`, `CustomerUpdate`, `CustomerHistory`, `ContactMethod`, `ContactMethodCreate`, `AttachmentUpload`, `Attachment` per `contracts/openapi.yaml` (depends on T005)
-- [ ] T061 Create `backend/app/services/customer_service.py` — `search`, `get`, `create` (rejects unless `contact_methods` has ≥1 item with exactly one `is_primary`), `update`, `deactivate`, `get_history` (merges `tickets`+`ticket_events`), `add_contact_method`, `add_attachment` exactly per `plan.md` §Service Classes (depends on T031, T032, T033, T013)
-- [ ] T062 Configure a `CustomerRepository` (`ScopedRepository[Customer]`, `scoping_mode=S1_FULL`) and `ContactMethodRepository` (`ScopedRepository[ContactMethod]`, `scoping_mode=S4_TRANSITIVE`, `parent_model=Customer`) as class-attribute config inside `customer_service.py` (no new repository file needed — no bespoke query beyond what `ScopedRepository` already provides) (depends on T031, T061)
-- [ ] T063 [P] Add trigram-similarity `search()` query (`pg_trgm` on `full_name_ar`/`full_name_en`/`organization_name`/`contact_methods.value`) to `CustomerRepository` in `customer_service.py` (FR-012) (depends on T062)
-- [ ] T064 Create `backend/app/api/routers/customers.py` — `/customers`, `/customers/{id}`, `/customers/{id}/deactivate`, `/customers/{id}/history`, `/customers/{id}/contact-methods`, `/customers/{id}/attachments`, per `contracts/openapi.yaml` — validate/delegate/serialize only (depends on T061)
-- [ ] T065 Wire `customers.py` into `backend/app/api/router.py` (depends on T064)
-- [ ] T066 [P] Create `frontend/app/[locale]/(agent)/customers/page.tsx` — list + search (depends on T043)
-- [ ] T067 [P] Create `frontend/app/[locale]/(agent)/customers/[id]/page.tsx` — detail, history, contact methods, attachment upload (depends on T043)
+- [X] T060 [P] Create `backend/app/schemas/customer.py` — `Customer`, `CustomerCreate`, `CustomerUpdate`, `CustomerHistory`, `ContactMethod`, `ContactMethodCreate`, `AttachmentUpload`, `Attachment` per `contracts/openapi.yaml` (depends on T005)
+- [X] T061 Create `backend/app/services/customer_service.py` — `search`, `get`, `create` (rejects unless `contact_methods` has ≥1 item with exactly one `is_primary`), `update`, `deactivate`, `get_history` (merges `tickets`+`ticket_events`), `add_contact_method`, `add_attachment` exactly per `plan.md` §Service Classes (depends on T031, T032, T033, T013)
+- [X] T062 Configure a `CustomerRepository` (`ScopedRepository[Customer]`, `scoping_mode=S1_FULL`) and `ContactMethodRepository` (`ScopedRepository[ContactMethod]`, `scoping_mode=S4_TRANSITIVE`, `parent_model=Customer`) as class-attribute config inside `customer_service.py` (no new repository file needed — no bespoke query beyond what `ScopedRepository` already provides) (depends on T031, T061)
+- [X] T063 [P] Add trigram-similarity `search()` query (`pg_trgm` on `full_name_ar`/`full_name_en`/`organization_name`/`contact_methods.value`) to `CustomerRepository` in `customer_service.py` (FR-012) (depends on T062)
+- [X] T064 Create `backend/app/api/routers/customers.py` — `/customers`, `/customers/{id}`, `/customers/{id}/deactivate`, `/customers/{id}/history`, `/customers/{id}/contact-methods`, `/customers/{id}/attachments`, per `contracts/openapi.yaml` — validate/delegate/serialize only (depends on T061)
+- [X] T065 Wire `customers.py` into `backend/app/api/router.py` (depends on T064)
+- [X] T066 [P] Create `frontend/app/[locale]/(agent)/customers/page.tsx` — list + search (depends on T043)
+- [X] T067 [P] Create `frontend/app/[locale]/(agent)/customers/[id]/page.tsx` — detail, history, contact methods, attachment upload (depends on T043)
 
 **Gate (PLAN.md §6)**: Creating a customer with an Arabic full name via `POST /customers`, then
 `GET /customers?q=<3-character Arabic substring>`, returns that customer.

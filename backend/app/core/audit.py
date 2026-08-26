@@ -62,6 +62,15 @@ def audited_via(entity_type_selector: Callable[[Any], str], action: str):
 
             result = await fn(self, actor, id, *args, **kwargs)
 
+            if result is not None:
+                # A column with onupdate=func.now() (UpdatedMixin.updated_at) is left expired
+                # after an UPDATE flush — SQLAlchemy 2.0's eager_defaults="auto" only fetches
+                # server-generated values back via RETURNING on INSERT, not UPDATE. Reading an
+                # expired attribute from here (plain sync code, not inside session.flush()'s own
+                # await chain) raises MissingGreenlet under the async driver. refresh() re-fetches
+                # every column in one more SELECT, sidestepping the lazy-load entirely.
+                await self.session.refresh(result)
+
             after = _serialize(result)
             entity_id = result.id if result is not None else id
 

@@ -3,6 +3,7 @@ import { NextIntlClientProvider } from "next-intl";
 import { getMessages } from "next-intl/server";
 import { notFound } from "next/navigation";
 
+import { QueryProvider } from "@/components/query-provider";
 import { locales, type Locale } from "@/i18n";
 import "../globals.css";
 
@@ -34,7 +35,9 @@ export default async function LocaleLayout({
   return (
     <html lang={locale} dir={dir}>
       <body className={locale === "ar" ? "font-arabic" : undefined}>
-        <NextIntlClientProvider messages={messages}>{children}</NextIntlClientProvider>
+        <NextIntlClientProvider messages={messages}>
+          <QueryProvider>{children}</QueryProvider>
+        </NextIntlClientProvider>
       </body>
     </html>
   );
