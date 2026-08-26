@@ -361,6 +361,23 @@ def audited(entity_type: str, action: str):
          the request, per app/db.py.
       5. Return the wrapped method's result unchanged.
     """
+    return audited_via(lambda self: entity_type, action)
+
+
+def audited_via(entity_type_selector: Callable[[Any], str], action: str):
+    """Identical to `audited`, except entity_type is read off the bound instance at call time
+    via `entity_type_selector(self)` instead of being a fixed literal — the audit-write analogue
+    of `require_permission_via` above. Added during Batch 4b: `AdminCrudService.create`/`.update`/
+    `.remove` (§Generic CRUD Pattern) are defined once on the generic base class, but each
+    subclass (`BranchCrudService`, `DepartmentCrudService`, ...) sets a different `entity_type`
+    class attribute — a literal `entity_type` captured at decoration time on the base class could
+    never see a subclass's value. Every `AdminCrudService` subclass's `create`/`update`/`remove`
+    is wrapped with `@audited_via(lambda self: self.entity_type, action)`, not the plain `audited`
+    shown above (which stays the right choice for a bespoke, non-generic service method with a
+    fixed, literal entity_type — e.g. `TeamCrudService.add_member`'s
+    `@audited("team_member", "create")`). Same five-step behavior as `audited`, substituting
+    `entity_type_selector(self)` for the literal `entity_type` at step 4.
+    """
 ```
 
 ### 4. `ChannelAdapter` (`app/channels/base.py`) — Principle VIII's channel half / PLAN.md F03

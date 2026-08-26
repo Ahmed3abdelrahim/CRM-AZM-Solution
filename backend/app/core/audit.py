@@ -1,3 +1,4 @@
+import datetime
 import functools
 import uuid
 from collections.abc import Callable
@@ -16,7 +17,7 @@ def _serialize(instance: Any) -> dict[str, Any] | None:
     result: dict[str, Any] = {}
     for column in mapper.columns:
         value = getattr(instance, column.key)
-        if isinstance(value, uuid.UUID):
+        if isinstance(value, (uuid.UUID, datetime.date, datetime.time)):
             value = str(value)
         result[column.key] = value
     return result
@@ -37,10 +38,22 @@ def audited(entity_type: str, action: str):
          request-scoped get_session() dependency commits once, at the end of the request.
       5. Return the wrapped method's result unchanged.
     """
+    return audited_via(lambda self: entity_type, action)
+
+
+def audited_via(entity_type_selector: Callable[[Any], str], action: str):
+    """Identical to `audited`, except entity_type is read off the bound instance at call time
+    via `entity_type_selector(self)` instead of being a fixed literal — the audit-write analogue
+    of `require_permission_via` (app/core/permissions.py). Needed because
+    `AdminCrudService.update`/`.remove` (app/services/admin_crud_service.py) are defined once on
+    the generic base class, but each subclass (BranchCrudService, DepartmentCrudService, ...)
+    sets a different `entity_type` class attribute — a literal `entity_type` captured at
+    decoration time on the base class could never see a subclass's value."""
 
     def decorator(fn: Callable) -> Callable:
         @functools.wraps(fn)
         async def wrapper(self, actor, id: uuid.UUID | None, *args: Any, **kwargs: Any):
+            entity_type = entity_type_selector(self)
             repository: ScopedRepository | None = getattr(self, "repository", None)
             before = None
             if id is not None and repository is not None:

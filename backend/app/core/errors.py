@@ -18,6 +18,12 @@ class NotFoundError(Exception):
         super().__init__(message_en)
 
 
+class InvalidCredentialsError(Exception):
+    """Raised by AuthService.login/refresh — deliberately carries no detail (wrong email, wrong
+    password, and an unknown email all map to this single error) so /auth/login never discloses
+    which part of a login attempt was wrong."""
+
+
 def _error_response(status_code: int, message_ar: str, message_en: str) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
@@ -41,7 +47,12 @@ async def not_found_handler(request: Request, exc: NotFoundError) -> JSONRespons
     return _error_response(404, exc.message_ar, exc.message_en)
 
 
+async def invalid_credentials_handler(request: Request, exc: InvalidCredentialsError) -> JSONResponse:
+    return _error_response(401, "بيانات الاعتماد غير صحيحة", "Invalid credentials")
+
+
 def register_error_handlers(app) -> None:
     app.add_exception_handler(PermissionDeniedError, permission_denied_handler)
     app.add_exception_handler(IllegalTransitionError, illegal_transition_handler)
     app.add_exception_handler(NotFoundError, not_found_handler)
+    app.add_exception_handler(InvalidCredentialsError, invalid_credentials_handler)

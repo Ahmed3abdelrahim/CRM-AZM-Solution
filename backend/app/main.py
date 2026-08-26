@@ -28,6 +28,7 @@ def create_app() -> FastAPI:
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
         correlation_id = request.headers.get("X-Correlation-Id", str(uuid.uuid4()))
+        request.state.correlation_id = correlation_id
         structlog.contextvars.bind_contextvars(correlation_id=correlation_id)
         started = time.monotonic()
         try:
