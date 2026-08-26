@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
@@ -5,9 +7,20 @@ from app.core.permissions import PermissionDeniedError
 
 
 class IllegalTransitionError(Exception):
-    def __init__(self, message_ar: str, message_en: str) -> None:
+    """contracts/openapi.yaml's `IllegalTransitionError` — 422, naming the ticket's current
+    status and every status it could legally move to instead (FR-017)."""
+
+    def __init__(
+        self,
+        message_ar: str,
+        message_en: str,
+        current_status_id: UUID,
+        permitted_status_ids: list[UUID],
+    ) -> None:
         self.message_ar = message_ar
         self.message_en = message_en
+        self.current_status_id = current_status_id
+        self.permitted_status_ids = permitted_status_ids
         super().__init__(message_en)
 
 
@@ -50,7 +63,15 @@ async def permission_denied_handler(request: Request, exc: PermissionDeniedError
 
 
 async def illegal_transition_handler(request: Request, exc: IllegalTransitionError) -> JSONResponse:
-    return _error_response(422, exc.message_ar, exc.message_en)
+    return JSONResponse(
+        status_code=422,
+        content={
+            "message_ar": exc.message_ar,
+            "message_en": exc.message_en,
+            "current_status_id": str(exc.current_status_id),
+            "permitted_status_ids": [str(status_id) for status_id in exc.permitted_status_ids],
+        },
+    )
 
 
 async def not_found_handler(request: Request, exc: NotFoundError) -> JSONResponse:

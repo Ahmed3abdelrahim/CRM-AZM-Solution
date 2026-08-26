@@ -7,12 +7,16 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.audit import audited_via
+from app.core.audit import audited, audited_via
 from app.core.errors import NotFoundError
 from app.core.permissions import CurrentActor, require_permission, require_permission_via
 from app.models.branch import Branch
+from app.models.category import Category
 from app.models.department import Department
+from app.models.priority import Priority
 from app.models.role import Permission, Role, RolePermission
+from app.models.team import Team, TeamMember
+from app.models.ticket_status import TicketStatus
 from app.repositories.scoped_repository import ScopedRepository, ScopingMode, TenantScope
 
 ModelT = TypeVar("ModelT")
@@ -168,3 +172,66 @@ class RoleCrudService(AdminCrudService[Role, Any, Any]):
     async def list_all_permissions(self, actor: CurrentActor) -> list[Permission]:
         result = await self.session.execute(select(Permission))
         return list(result.scalars().all())
+
+
+class _CategoryRepository(ScopedRepository[Category]):
+    model = Category
+    scoping_mode = ScopingMode.S2_BRANCH_DEPT_OPTIONAL
+    has_soft_delete = True
+
+
+class CategoryCrudService(AdminCrudService[Category, Any, Any]):
+    repository_cls = _CategoryRepository
+    entity_type = "category"
+    read_permission = "category.read"
+
+
+class _PriorityRepository(ScopedRepository[Priority]):
+    model = Priority
+    scoping_mode = ScopingMode.S2_BRANCH_DEPT_OPTIONAL
+    has_soft_delete = False
+
+
+class PriorityCrudService(AdminCrudService[Priority, Any, Any]):
+    repository_cls = _PriorityRepository
+    entity_type = "priority"
+    read_permission = "priority.read"
+
+
+class _TicketStatusRepository(ScopedRepository[TicketStatus]):
+    model = TicketStatus
+    scoping_mode = ScopingMode.S2_BRANCH_DEPT_OPTIONAL
+    has_soft_delete = False
+
+
+class TicketStatusCrudService(AdminCrudService[TicketStatus, Any, Any]):
+    repository_cls = _TicketStatusRepository
+    entity_type = "ticket_status"
+    read_permission = "ticket_status.read"
+
+
+class _TeamRepository(ScopedRepository[Team]):
+    model = Team
+    scoping_mode = ScopingMode.S1_FULL
+    has_soft_delete = False
+
+
+class TeamCrudService(AdminCrudService[Team, Any, Any]):
+    """Thin CRUD subclass plus one bespoke method (`add_member`) — a team with no way to add a
+    member is otherwise a dead end (`/speckit-analyze` finding D1's follow-up; no task previously
+    created this service or its `/teams` routes at all)."""
+
+    repository_cls = _TeamRepository
+    entity_type = "team"
+    read_permission = "team.read"
+
+    @require_permission("admin.config")
+    @audited("team_member", "create")
+    async def add_member(self, actor: CurrentActor, id: UUID, user_id: UUID) -> TeamMember:
+        team = await self.repository.get(id)
+        if team is None:
+            raise self._not_found(id)
+        member = TeamMember(team_id=id, user_id=user_id, created_by=actor.user_id)
+        self.session.add(member)
+        await self.session.flush()
+        return member

@@ -159,18 +159,18 @@ a token pair; any subsequent admin mutation (e.g. `POST /branches`) produces exa
 **Contents (PLAN.md §6)**: F02 — categories, priorities, statuses, transitions, tickets,
 timeline, assignment.
 
-- [ ] T068 [P] In `backend/app/services/admin_crud_service.py`, add `CategoryCrudService`
+- [X] T068 [P] In `backend/app/services/admin_crud_service.py`, add `CategoryCrudService`
       (`read_permission="category.read"`, `has_soft_delete=True`, matching `data-model.md` §0.4's
       per-table matrix), `PriorityCrudService` (`read_permission="priority.read"`),
       `TicketStatusCrudService` (`read_permission="ticket_status.read"`) thin subclasses (depends
       on T048)
-- [ ] T069 Create `backend/app/services/status_transition_service.py` (admin side) —
+- [X] T069 Create `backend/app/services/status_transition_service.py` (admin side) —
       `list` (`require_permission("status_transition.read")`) plus `create`/`update`/`delete`
       (no single-`get`, matching `contracts/openapi.yaml`) over `StatusTransition`, each requiring
       `"admin.config"`; `delete` is a hard `DELETE` (no `is_active` column) (depends on T048)
-- [ ] T069a [P] Create `backend/app/schemas/team.py` — `Team`, `TeamCreate`, `TeamUpdate`,
+- [X] T069a [P] Create `backend/app/schemas/team.py` — `Team`, `TeamCreate`, `TeamUpdate`,
       `TeamMemberCreate` per `contracts/openapi.yaml` (depends on T005)
-- [ ] T069b In `backend/app/services/admin_crud_service.py`, add `TeamCrudService` thin subclass
+- [X] T069b In `backend/app/services/admin_crud_service.py`, add `TeamCrudService` thin subclass
       — sets `repository_cls` (`ScopedRepository[Team]`, `scoping_mode=S1_FULL`), `entity_type`,
       `read_permission="team.read"`, `has_soft_delete=False` (hard delete, matching
       `data-model.md` §0.4; `write_permission` inherits `"admin.config"` unchanged) — plus its one
@@ -179,21 +179,21 @@ timeline, assignment.
       (`require_permission("admin.config")` + `audited("team_member", "create")`) — added after
       `/speckit-analyze` finding D1's follow-up: no task previously created this service or its
       `/teams` routes at all (depends on T048, T012)
-- [ ] T070 [P] Create `backend/app/schemas/ticket_taxonomy.py` — `Category`/`CategoryCreate`/
+- [X] T070 [P] Create `backend/app/schemas/ticket_taxonomy.py` — `Category`/`CategoryCreate`/
       `CategoryUpdate`, `Priority`/`PriorityCreate`/`PriorityUpdate`, `TicketStatus`/
       `TicketStatusCreate`/`TicketStatusUpdate`, `StatusTransition`/`StatusTransitionCreate`/
       `StatusTransitionUpdate` per `contracts/openapi.yaml` (depends on T005)
-- [ ] T071 [P] Create `backend/app/schemas/ticket.py` — `Ticket`, `TicketSummary`,
+- [X] T071 [P] Create `backend/app/schemas/ticket.py` — `Ticket`, `TicketSummary`,
       `TicketCreate`, `TicketUpdate`, `TicketStatusChange`, `TicketAssign`,
       `SlaOverrideRequest`, `TicketTriageCorrection`, `TicketNoteCreate`, `TicketReplyCreate`,
       `TicketEvent`, `IllegalTransitionError` per `contracts/openapi.yaml` (depends on T005)
-- [ ] T072 Create `backend/app/repositories/ticket_repository.py` — `TicketRepository`
+- [X] T072 Create `backend/app/repositories/ticket_repository.py` — `TicketRepository`
       (`ScopedRepository[Ticket]`, `scoping_mode=S1_FULL`) plus the five F04 dashboard-view query
       builders (`my_open`, `team_queue`, `unassigned` incl. `needs_triage` tickets,
       `breaching_soon` ordered by time-remaining ascending, `recently_closed`) and the shared
       filter set (status/priority/category/assignee/channel/date-range/free-text) — used by both
       this batch's `TicketService.list` and Batch 4e's dashboard (depends on T031, T018)
-- [ ] T073 Create `backend/app/services/ticket_service.py` — `list`, `get`, `create` (validates
+- [X] T073 Create `backend/app/services/ticket_service.py` — `list`, `get`, `create` (validates
       `category_id`/`priority_id` are each currently active and, if department-scoped, match the
       ticket's `department_id` — rejects with a localized 422 otherwise, FR-016; DB-sequence
       `reference_no` generation `TKT-{year}-{6-digit}`, resolves `sla_policy_id` via a stub
@@ -202,32 +202,32 @@ timeline, assignment.
       (stamps `first_response_at` iff currently `NULL`), `add_attachment`, `correct_triage`
       (clears `needs_triage`, writes a `field_changed` event per FR-023c), `get_events` — exactly
       per `plan.md` §Service Classes (depends on T072, T032, T033)
-- [ ] T074 Create `backend/app/services/ticket_transition_service.py` — `change_status`: the only
+- [X] T074 Create `backend/app/services/ticket_transition_service.py` — `change_status`: the only
       method in the codebase querying `status_transitions`; matches `(from_status_id,
       to_status_id)` at the ticket's department, falling back to the `department_id IS NULL`
       default row; raises `IllegalTransitionError(current_status_id, permitted_status_ids)` on no
       match; raises `PermissionDeniedError` when `required_permission` is set and absent; raises a
       validation error when `requires_reason` is true and `reason` is `None` (constitution
       Principle XI / PLAN.md C11) (depends on T073, T037)
-- [ ] T075 [P] Create `backend/tests/unit/test_ticket_transitions.py` — legal transition succeeds;
+- [X] T075 [P] Create `backend/tests/unit/test_ticket_transitions.py` — legal transition succeeds;
       illegal transition raises `IllegalTransitionError` naming current + permitted statuses;
       `requires_reason=true` without a reason is rejected; a transition whose
       `required_permission` the actor lacks is rejected (Testing Proportionality — status
       transition legality) (depends on T074)
-- [ ] T076 Create `backend/app/api/routers/admin_config.py` additions — `/categories`,
+- [X] T076 Create `backend/app/api/routers/admin_config.py` additions — `/categories`,
       `/priorities`, `/ticket-statuses`, `/status-transitions` routes (extends the file from
       Batch 4b) (depends on T068, T069, T070)
-- [ ] T076a [P] Create `backend/app/api/routers/admin_config.py` additions — `/teams`
+- [X] T076a [P] Create `backend/app/api/routers/admin_config.py` additions — `/teams`
       (list/create/get/update/delete) and `/teams/{id}/members` (add member) routes, calling
       `TeamCrudService`'s inherited CRUD methods and its bespoke `add_member` — validate/delegate/
       serialize only (depends on T069a, T069b)
-- [ ] T077 Create `backend/app/api/routers/tickets.py` — every `/tickets*` path in
+- [X] T077 Create `backend/app/api/routers/tickets.py` — every `/tickets*` path in
       `contracts/openapi.yaml` except `/tickets/{id}/sla-override` (Batch 4f) and the
       `/tickets/{id}/ai/*` paths (Batch 4h) — validate/delegate/serialize only (depends on T073,
       T074, T071)
-- [ ] T078 Wire the Batch 4d router additions into `backend/app/api/router.py` (depends on T076,
+- [X] T078 Wire the Batch 4d router additions into `backend/app/api/router.py` (depends on T076,
       T076a, T077)
-- [ ] T079 [P] Create `frontend/app/[locale]/(agent)/tickets/[id]/page.tsx` — ticket detail,
+- [X] T079 [P] Create `frontend/app/[locale]/(agent)/tickets/[id]/page.tsx` — ticket detail,
       status-change control (surfacing the localized illegal-transition error), assignment,
       timeline, notes/replies, attachments, inline customer context (FR-028) (depends on T043,
       T067)

@@ -19,8 +19,33 @@ from app.schemas.role import (
     RoleCreate,
     RoleUpdate,
 )
+from app.schemas.team import Team, TeamCreate, TeamMemberCreate, TeamUpdate
+from app.schemas.ticket_taxonomy import (
+    Category,
+    CategoryCreate,
+    CategoryUpdate,
+    Priority,
+    PriorityCreate,
+    PriorityUpdate,
+    StatusTransition,
+    StatusTransitionCreate,
+    StatusTransitionUpdate,
+    TicketStatus,
+    TicketStatusCreate,
+    TicketStatusUpdate,
+)
 from app.schemas.user import User, UserCreate, UserRole, UserRoleCreate, UserUpdate
-from app.services.admin_crud_service import AdminCrudService, BranchCrudService, DepartmentCrudService, RoleCrudService
+from app.services.admin_crud_service import (
+    AdminCrudService,
+    BranchCrudService,
+    CategoryCrudService,
+    DepartmentCrudService,
+    PriorityCrudService,
+    RoleCrudService,
+    TeamCrudService,
+    TicketStatusCrudService,
+)
+from app.services.status_transition_service import StatusTransitionService
 from app.services.user_service import UserService
 
 router = APIRouter(tags=["admin"])
@@ -251,3 +276,146 @@ async def list_permissions(
 ):
     service = RoleCrudService(session, actor.scope)
     return await service.list_all_permissions(actor)
+
+
+# ---------------------------------------------------------------- Batch 4d: taxonomy + teams
+register_admin_crud_routes(
+    router,
+    path="/categories",
+    service_cls=CategoryCrudService,
+    response_schema=Category,
+    create_schema=CategoryCreate,
+    update_schema=CategoryUpdate,
+    remove_style="deactivate_post",
+    operation_ids={
+        "list": "listCategories",
+        "create": "createCategory",
+        "get": "getCategory",
+        "update": "updateCategory",
+        "remove": "deactivateCategory",
+    },
+)
+
+register_admin_crud_routes(
+    router,
+    path="/priorities",
+    service_cls=PriorityCrudService,
+    response_schema=Priority,
+    create_schema=PriorityCreate,
+    update_schema=PriorityUpdate,
+    remove_style="delete",
+    operation_ids={
+        "list": "listPriorities",
+        "create": "createPriority",
+        "get": "getPriority",
+        "update": "updatePriority",
+        "remove": "deletePriority",
+    },
+)
+
+register_admin_crud_routes(
+    router,
+    path="/ticket-statuses",
+    service_cls=TicketStatusCrudService,
+    response_schema=TicketStatus,
+    create_schema=TicketStatusCreate,
+    update_schema=TicketStatusUpdate,
+    remove_style="delete",
+    operation_ids={
+        "list": "listTicketStatuses",
+        "create": "createTicketStatus",
+        "get": "getTicketStatus",
+        "update": "updateTicketStatus",
+        "remove": "deleteTicketStatus",
+    },
+)
+
+register_admin_crud_routes(
+    router,
+    path="/teams",
+    service_cls=TeamCrudService,
+    response_schema=Team,
+    create_schema=TeamCreate,
+    update_schema=TeamUpdate,
+    remove_style="delete",
+    operation_ids={
+        "list": "listTeams",
+        "create": "createTeam",
+        "get": "getTeam",
+        "update": "updateTeam",
+        "remove": "deleteTeam",
+    },
+)
+
+
+@router.post(
+    "/teams/{id}/members",
+    status_code=status.HTTP_201_CREATED,
+    operation_id="addTeamMember",
+)
+async def add_team_member(
+    id: UUID,
+    data: TeamMemberCreate,
+    actor: CurrentActor = Depends(get_current_actor),
+    session: AsyncSession = Depends(get_session),
+):
+    service = TeamCrudService(session, actor.scope)
+    await service.add_member(actor, id, data.user_id)
+    return None
+
+
+# ---------------------------------------------------------------- status-transitions (no single-get)
+@router.get(
+    "/status-transitions", response_model=list[StatusTransition], operation_id="listStatusTransitions"
+)
+async def list_status_transitions(
+    limit: int = 50,
+    offset: int = 0,
+    actor: CurrentActor = Depends(get_current_actor),
+    session: AsyncSession = Depends(get_session),
+):
+    service = StatusTransitionService(session, actor.scope)
+    return await service.list(actor, limit=limit, offset=offset)
+
+
+@router.post(
+    "/status-transitions",
+    response_model=StatusTransition,
+    status_code=status.HTTP_201_CREATED,
+    operation_id="createStatusTransition",
+)
+async def create_status_transition(
+    data: StatusTransitionCreate,
+    actor: CurrentActor = Depends(get_current_actor),
+    session: AsyncSession = Depends(get_session),
+):
+    service = StatusTransitionService(session, actor.scope)
+    return await service.create(actor, data)
+
+
+@router.patch(
+    "/status-transitions/{id}", response_model=StatusTransition, operation_id="updateStatusTransition"
+)
+async def update_status_transition(
+    id: UUID,
+    data: StatusTransitionUpdate,
+    actor: CurrentActor = Depends(get_current_actor),
+    session: AsyncSession = Depends(get_session),
+):
+    service = StatusTransitionService(session, actor.scope)
+    return await service.update(actor, id, data)
+
+
+@router.delete(
+    "/status-transitions/{id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="deleteStatusTransition",
+    response_model=None,
+)
+async def delete_status_transition(
+    id: UUID,
+    actor: CurrentActor = Depends(get_current_actor),
+    session: AsyncSession = Depends(get_session),
+):
+    service = StatusTransitionService(session, actor.scope)
+    await service.delete(actor, id)

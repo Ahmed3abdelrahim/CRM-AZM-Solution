@@ -124,16 +124,77 @@ export interface Attachment {
   storage_key: string;
 }
 
+export interface TicketStatus {
+  id: string;
+  label_ar: string;
+  label_en: string;
+  branch_id: string;
+  department_id: string | null;
+  code: string;
+  is_terminal: boolean;
+  pauses_sla: boolean;
+  sort_order: number;
+}
+
+export interface Ticket {
+  id: string;
+  reference_no: string;
+  subject: string;
+  description: string;
+  status_id: string;
+  priority_id: string;
+  category_id: string;
+  assignee_id: string | null;
+  team_id: string | null;
+  channel: string;
+  source_locale: Locale;
+  needs_triage: boolean;
+  created_at: string;
+  branch_id: string;
+  department_id: string;
+  customer_id: string;
+  customer?: Customer;
+  sla_policy_id: string | null;
+  first_response_at: string | null;
+  resolved_at: string | null;
+  closed_at: string | null;
+  reopened_count: number;
+  sla_paused_ms: number;
+}
+
+export interface TicketCreate {
+  branch_id: string;
+  department_id: string;
+  customer_id: string;
+  subject: string;
+  description: string;
+  category_id: string;
+  priority_id: string;
+  channel: string;
+  source_locale: Locale;
+  team_id?: string | null;
+}
+
 export class ApiError extends Error {
   status: number;
   messageAr?: string;
   messageEn?: string;
+  currentStatusId?: string;
+  permittedStatusIds?: string[];
 
-  constructor(status: number, messageAr?: string, messageEn?: string) {
+  constructor(
+    status: number,
+    messageAr?: string,
+    messageEn?: string,
+    currentStatusId?: string,
+    permittedStatusIds?: string[],
+  ) {
     super(messageEn ?? `Request failed with status ${status}`);
     this.status = status;
     this.messageAr = messageAr;
     this.messageEn = messageEn;
+    this.currentStatusId = currentStatusId;
+    this.permittedStatusIds = permittedStatusIds;
   }
 }
 
@@ -167,8 +228,19 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
 
   if (!response.ok) {
-    const body: { message_ar?: string; message_en?: string } | null = await response.json().catch(() => null);
-    throw new ApiError(response.status, body?.message_ar, body?.message_en);
+    const body: {
+      message_ar?: string;
+      message_en?: string;
+      current_status_id?: string;
+      permitted_status_ids?: string[];
+    } | null = await response.json().catch(() => null);
+    throw new ApiError(
+      response.status,
+      body?.message_ar,
+      body?.message_en,
+      body?.current_status_id,
+      body?.permitted_status_ids,
+    );
   }
   if (response.status === 204) {
     return undefined as T;
@@ -217,5 +289,37 @@ export const api = {
     const form = new FormData();
     form.append("file", file);
     return request(`/customers/${id}/attachments`, { method: "POST", body: form });
+  },
+  listTicketStatuses(): Promise<TicketStatus[]> {
+    return request(`/ticket-statuses${searchParams({ limit: 200 })}`);
+  },
+  getTicket(id: string): Promise<Ticket> {
+    return request(`/tickets/${id}`);
+  },
+  createTicket(data: TicketCreate): Promise<Ticket> {
+    return request("/tickets", { method: "POST", body: JSON.stringify(data) });
+  },
+  getTicketEvents(id: string): Promise<TicketEvent[]> {
+    return request(`/tickets/${id}/events`);
+  },
+  changeTicketStatus(id: string, toStatusId: string, reason?: string): Promise<Ticket> {
+    return request(`/tickets/${id}/status`, {
+      method: "POST",
+      body: JSON.stringify({ to_status_id: toStatusId, reason: reason || null }),
+    });
+  },
+  assignTicket(id: string, assigneeId: string | null): Promise<Ticket> {
+    return request(`/tickets/${id}/assign`, { method: "POST", body: JSON.stringify({ assignee_id: assigneeId }) });
+  },
+  addTicketNote(id: string, body: string): Promise<TicketEvent> {
+    return request(`/tickets/${id}/notes`, { method: "POST", body: JSON.stringify({ body }) });
+  },
+  addTicketReply(id: string, body: string): Promise<TicketEvent> {
+    return request(`/tickets/${id}/replies`, { method: "POST", body: JSON.stringify({ body }) });
+  },
+  uploadTicketAttachment(id: string, file: File): Promise<Attachment> {
+    const form = new FormData();
+    form.append("file", file);
+    return request(`/tickets/${id}/attachments`, { method: "POST", body: form });
   },
 };
