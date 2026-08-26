@@ -485,12 +485,15 @@ keys, seed data.
       pre-breaching), 10 fully bilingual KB articles, a 3-level category tree, 4 priorities, 7
       statuses with the full `status_transitions` table from `data-model.md` §4, 3 SLA policies,
       8 quick replies, 2 `channel_configs` rows (one per department), and the full seeded
-      permission set from `data-model.md` §5 — **including `audit.read` and `report.cross_branch`
-      granted to the seeded admin**, per PLAN.md §7's explicit instruction, **and the eleven
-      `{entity}.read` permissions (`branch.read`, `department.read`, `user.read`, `role.read`,
+      permission set from `data-model.md` §5, with every role→permission grant assigned exactly
+      per `data-model.md` §5.1's table (not left to guesswork) — `admin.config`/`audit.read`/
+      `report.cross_branch`/`customer.delete` to `admin` only; `ticket.sla_override`/
+      `ticket.reopen`/`ticket.assign` to `lead`+`admin`; `ticket.read`/`ticket.create`/
+      `ticket.close`/`ticket.own`/`customer.read`/`customer.create` and all eleven
+      `{entity}.read` codes (`branch.read`, `department.read`, `user.read`, `role.read`,
       `category.read`, `priority.read`, `ticket_status.read`, `status_transition.read`,
-      `sla_policy.read`, `quick_reply.read`, `team.read`) granted to every seeded `agent` and
-      `lead` user, not just `admin`** (`/speckit-analyze` finding D1). This task's seed
+      `sla_policy.read`, `quick_reply.read`, `team.read`) to `agent`+`lead`+`admin`
+      (`/speckit-analyze` findings D1 and E1). This task's seed
       script writes rows through every model created in Batch 4a and touches functionality from
       every batch since (customers, tickets, KB articles, SLA policies, channel configs), so it
       depends on T030 (full schema) and, transitively, on every batch's models being complete —

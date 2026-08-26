@@ -186,7 +186,7 @@ frontend/
 │   │   │   ├── customers/[id]/page.tsx
 │   │   │   ├── kb/page.tsx
 │   │   │   ├── reports/page.tsx
-│   │   │   └── admin/                  # One route per admin_config.py router group
+│   │   │   └── admin/                  # API-key management only (issue/list/revoke) this sprint — admin config for branches, departments, users, roles, categories, priorities, statuses, transitions, SLA policies, quick replies, and teams is API-only (already-built AdminCrudService/TeamCrudService endpoints); no UI for those this sprint (docs/DEBT.md D12, `/speckit-analyze` finding F1)
 │   │   └── (portal)/
 │   │       ├── submit/page.tsx
 │   │       ├── track/page.tsx
@@ -307,6 +307,25 @@ def require_permission(code: str):
     def decorator(fn):
         @functools.wraps(fn)
         async def wrapper(self, actor: CurrentActor, *args, **kwargs):
+            if code not in actor.permissions:
+                raise PermissionDeniedError(code)
+            return await fn(self, actor, *args, **kwargs)
+        return wrapper
+    return decorator
+
+def require_permission_via(code_selector: Callable[[Any], str]):
+    """Identical to require_permission, except the permission code is read off the bound
+    instance at call time via `code_selector(self)` instead of being a fixed literal — this is
+    the ONLY difference. Exists because AdminCrudService's four decorated methods (§Generic CRUD
+    Pattern) are defined once on the generic base class, but each subclass sets a different
+    `read_permission`/`write_permission` class attribute; a literal `code` captured at
+    decoration time on the base class could never see a subclass's value. Wraps an async SERVICE
+    method whose signature MUST be `(self, actor: CurrentActor, *args, **kwargs)` — identical
+    calling convention to require_permission."""
+    def decorator(fn):
+        @functools.wraps(fn)
+        async def wrapper(self, actor: CurrentActor, *args, **kwargs):
+            code = code_selector(self)
             if code not in actor.permissions:
                 raise PermissionDeniedError(code)
             return await fn(self, actor, *args, **kwargs)
@@ -462,8 +481,8 @@ its own `{entity}.read` code (`branch.read`, `department.read`, `user.read`, `ro
 `create`, `update`, and `remove` are each additionally wrapped with `@audited(entity_type,
 action)` at definition time in `admin_crud_service.py` — `list`/`get` are not audited (reads have
 no concept of a before/after change, matching `data-model.md`'s `audit_logs` schema).
-`require_permission_via` (a two-line helper alongside `require_permission` in
-`app/core/permissions.py`) exists so the permission code can be a class attribute instead of a
+`require_permission_via` (defined alongside `require_permission` in `app/core/permissions.py`,
+§Shared Abstractions #2) exists so the permission code can be a class attribute instead of a
 literal.
 
 **`UserService(AdminCrudService[User, UserCreate, UserUpdate])`** overrides `create` only, to hash
@@ -642,12 +661,6 @@ here: PLAN.md §4.1's own Assignment table is missing rows for six tables (resol
 own pattern definitions, not invented) and its `channel_configs`/`llm_calls` rows are visibly
 misplaced (a formatting defect, not a content one). This plan does not edit PLAN.md — see
 `research.md` Part 2 for the full reasoning and the recommendation to correct PLAN.md §4.1 itself.
-Also carried over: the constitution's Principle IV exemption list (`contact_methods`, `kb_articles`
-among tables it says need both `branch_id`/`department_id`) contradicts PLAN.md's explicit S4
-assignment for `contact_methods`; this plan follows PLAN.md (the authoritative domain-model
-source) per this turn's explicit instruction, and flags the constitution text as due for a
-wording amendment, not a content one — `/speckit.constitution` is the correct channel for that,
-not this plan.
 
 ### Scoping-pattern verification (PLAN.md §4.1, this turn's explicit check)
 

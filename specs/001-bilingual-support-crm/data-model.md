@@ -639,3 +639,34 @@ FR-060 resolutions:
 Full CRUD-permission naming convention (`{entity}.read`/`.create`/`.update`/`.deactivate`) for
 every other S1/S2/S3 entity not named above (e.g. `kb_article.read`, `kb_article.publish`) is
 defined once in `plan.md`'s "Generic CRUD Pattern" section rather than enumerated per entity here.
+
+## 5.1 Role → Permission Grants (seed-time — closes `/speckit-analyze` finding E1)
+
+Every permission code in §5 above, mapped to the role(s) it is granted to at seed time
+(`app/seed/seed.py`, `data-model.md` §4's `roles` rows: `admin`, `lead`, `agent` — `customer` is
+the portal's unauthenticated/no-login actor and holds none of these). This table is exhaustive:
+every code in §5 appears exactly once below.
+
+| Permission code(s) | Granted to |
+|---|---|
+| `admin.config` | `admin` only |
+| `audit.read` | `admin` only |
+| `report.cross_branch` | `admin` only |
+| `customer.delete` | `admin` only |
+| `ticket.sla_override` | `lead`, `admin` |
+| `ticket.reopen` | `lead`, `admin` |
+| `ticket.assign` | `lead`, `admin` |
+| `ticket.read`, `ticket.create`, `ticket.close`, `ticket.own` | `agent`, `lead`, `admin` |
+| `customer.read`, `customer.create` | `agent`, `lead`, `admin` |
+| `branch.read`, `department.read`, `user.read`, `role.read`, `category.read`, `priority.read`, `ticket_status.read`, `status_transition.read`, `sla_policy.read`, `quick_reply.read`, `team.read` | `agent`, `lead`, `admin` |
+
+This is what makes Story 2 Acceptance Scenario 3 / FR-018 / `quickstart.md` step 4.6 concretely
+true of the seeded system: a seeded `agent` does not hold `ticket.reopen` (403 on reopen), a
+seeded `lead` does (succeeds, `reopened_count` increments) — without this table, that behavior
+depended on an implementer's guess. `ticket.assign` is `lead`+`admin` only (not `agent`) so that
+FR-031's "Team Lead can additionally reassign across the entire department" is a real capability
+delta over Agent, not a distinction with no enforcement difference; an Agent still assigns/claims
+their own tickets via `TicketService.assign` called on their own queue, gated the same as any
+other `ticket.assign`-holding actor — Agents not holding `ticket.assign` at all is the simplest
+rule that satisfies both FR-019 (agents can be assigned to) and FR-031 (only Leads reassign)
+without inventing a second, narrower permission code PLAN.md never names.

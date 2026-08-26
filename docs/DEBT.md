@@ -23,6 +23,7 @@ An undocumented shortcut is a violation. If you take one during implementation, 
 | D09 | Reranking behind a feature flag, default off; fused RRF order returned when disabled | `bge-reranker-v2-m3` always on | GPU available, or when retrieval quality measurably limits suggested-solution accuracy | 0.25 day |
 | D10 | Audit rows written from day one, but no browsing interface | Searchable, filterable audit log UI with export | Before any compliance review. The data is complete — only the reader is missing | 0.5 day |
 | D11 | i18n enforcement is a grep check, not an ESLint rule | Proper ESLint rule integrated in CI | Phase 2 |
+| D12 | Admin configuration is API-only; no UI for branches, departments, users, roles, taxonomy, SLA policies, quick replies, or teams | Admin UI screens under `frontend/app/[locale]/(agent)/admin/`, one per `admin_config.py` router group | Before handover to non-technical administrators | 1–2 days |
 ---
 
 ## Standing constraints these shortcuts must not violate

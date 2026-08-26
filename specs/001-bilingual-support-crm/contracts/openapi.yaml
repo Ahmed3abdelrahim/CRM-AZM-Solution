@@ -208,7 +208,7 @@ paths:
       operationId: addTeamMember
       x-permission: admin.config
       parameters: [{ $ref: "#/components/parameters/PathId" }]
-      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [user_id], properties: { user_id: { type: string, format: uuid } } } } } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/TeamMemberCreate" } } } }
       responses: { "201": { description: Added } }
 
   # ---------------------------------------------------------------- customers (F01)
@@ -798,6 +798,7 @@ components:
           properties: { branch_id: { type: string, format: uuid }, department_id: { type: string, format: uuid } }
     TeamCreate: { type: object, required: [branch_id, department_id, label_ar, label_en], properties: { branch_id: { type: string, format: uuid }, department_id: { type: string, format: uuid }, label_ar: { type: string }, label_en: { type: string } } }
     TeamUpdate: { type: object, properties: { label_ar: { type: string }, label_en: { type: string } } }
+    TeamMemberCreate: { type: object, required: [user_id], properties: { user_id: { type: string, format: uuid } } }
 
     Customer:
       type: object
