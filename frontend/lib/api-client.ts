@@ -5,9 +5,10 @@
  * pages (T066/T067) and their branch/department pickers call. Later batches extend it as they
  * consume more of the API, or replace it with a generated client wholesale.
  *
- * No login page exists anywhere in tasks.md yet (every batch through 4i), so there is
- * deliberately no login() helper here either — this reads whatever bearer token a caller has
- * already put in localStorage (e.g. via `/docs`'s Swagger UI against `POST /auth/login`).
+ * `api.login()` plus `/[locale]/login/page.tsx` (added post-Batch-4e, per a live-testing finding
+ * that the agent UI had no reachable login path) is the one exception: `request()` redirects any
+ * other 401 to that page rather than surfacing it as a generic error — see `redirectToLogin()`
+ * below.
  */
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
@@ -234,6 +235,12 @@ export interface TicketListFilters {
   q?: string;
 }
 
+export interface TokenPair {
+  access_token: string;
+  refresh_token: string;
+  expires_in: number | null;
+}
+
 export class ApiError extends Error {
   status: number;
   messageAr?: string;
@@ -276,7 +283,36 @@ export function setAccessToken(token: string): void {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+function clearAccessToken(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
+  } catch {
+    // Best-effort only, same as setAccessToken above.
+  }
+}
+
+/** Every page under `/[locale]/(agent)` and `/[locale]/(portal)` requires a bearer token; a 401
+ * from any of them means "not logged in" (no token, or an expired/invalid one), not a normal
+ * request failure — surfacing it as an inline error page is wrong, so `request()` below redirects
+ * to `/{locale}/login` instead of throwing. `skipAuthRedirect` is for `POST /auth/login` itself:
+ * a wrong-password attempt also returns 401, and that must show inline on the login form, not
+ * bounce back to the same page it's already on. */
+function redirectToLogin(): void {
+  if (typeof window === "undefined") return;
+  const pathname = window.location.pathname;
+  if (pathname.includes("/login")) return; // already there — avoid a redirect loop
+  const segment = pathname.split("/")[1];
+  const locale = segment === "en" ? "en" : "ar";
+  const next = encodeURIComponent(pathname + window.location.search);
+  window.location.href = `/${locale}/login?next=${next}`;
+}
+
+async function request<T>(
+  path: string,
+  init: RequestInit = {},
+  opts: { skipAuthRedirect?: boolean } = {},
+): Promise<T> {
   const token = getAccessToken();
   const headers = new Headers(init.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
@@ -287,6 +323,13 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
 
   if (!response.ok) {
+    if (response.status === 401 && !opts.skipAuthRedirect) {
+      clearAccessToken();
+      redirectToLogin();
+      // The page is navigating away — never resolve so callers (e.g. TanStack Query) don't
+      // flash a generic error state in the instant before the browser unloads it.
+      return new Promise<T>(() => {});
+    }
     const body: {
       message_ar?: string;
       message_en?: string;
@@ -317,6 +360,13 @@ function searchParams(params: Record<string, string | number | undefined>): stri
 }
 
 export const api = {
+  login(email: string, password: string): Promise<TokenPair> {
+    return request(
+      "/auth/login",
+      { method: "POST", body: JSON.stringify({ email, password }) },
+      { skipAuthRedirect: true },
+    );
+  },
   listBranches(): Promise<Branch[]> {
     return request(`/branches${searchParams({ limit: 200 })}`);
   },

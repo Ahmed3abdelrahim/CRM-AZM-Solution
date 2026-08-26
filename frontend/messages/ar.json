@@ -45,6 +45,13 @@
     "ar": "العربية",
     "en": "English"
   },
+  "Login": {
+    "title": "تسجيل الدخول",
+    "emailLabel": "البريد الإلكتروني",
+    "passwordLabel": "كلمة المرور",
+    "submitButton": "تسجيل الدخول",
+    "loading": "جارٍ تسجيل الدخول…"
+  },
   "Customers": {
     "title": "العملاء",
     "searchLabel": "بحث",

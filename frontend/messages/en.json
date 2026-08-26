@@ -45,6 +45,13 @@
     "ar": "العربية",
     "en": "English"
   },
+  "Login": {
+    "title": "Sign in",
+    "emailLabel": "Email",
+    "passwordLabel": "Password",
+    "submitButton": "Sign in",
+    "loading": "Signing in…"
+  },
   "Customers": {
     "title": "Customers",
     "searchLabel": "Search",

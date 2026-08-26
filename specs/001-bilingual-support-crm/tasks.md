@@ -315,6 +315,32 @@ task checklist above:
    page. Added `dir="auto"` (browser-native per-content-block direction inference) to each; no
    Tailwind utility involved, so this doesn't touch T087's physical-vs-logical-properties check.
 
+**Post-gate fixes (user browser test, this run, still Batch 4e — no 4f work)**: two more defects
+surfaced testing the gate build directly, both frontend-only:
+5. **A 401 rendered as a generic error instead of redirecting to login** — every page's
+   `{queryX.isError && <p role="alert">{t("error")}</p>}` treated an expired/missing token
+   identically to any other failure. `frontend/lib/api-client.ts`'s `request()` now intercepts
+   `401` before it ever becomes an `ApiError`: clears the stored token and hard-navigates to
+   `/{locale}/login?next=<original path+query>`, returning a never-resolving promise so the
+   caller's query/mutation never reaches an error-render state. `POST /auth/login` itself opts out
+   via a new `skipAuthRedirect` flag (its own 401 — wrong password — must stay inline on the login
+   form, not bounce back to itself).
+6. **No login page existed** — confirmed via `find`/`grep`, nothing under `frontend/app/` served
+   one, so there was no way back in once a token expired or on a fresh visit. Added
+   `frontend/app/[locale]/login/page.tsx`: email/password form calling the new `api.login()`,
+   bilingual inline error on failure (reusing the `ApiError.messageAr`/`messageEn` pattern already
+   used elsewhere), `setAccessToken()` + redirect to `next` (restricted to a same-locale relative
+   path — not an open redirect) or `/{locale}/dashboard` on success. New `Login` message namespace
+   in both `messages/ar.json` and `messages/en.json`.
+
+Verified live end-to-end (same running `docker compose` stack): an unauthenticated visit to the
+ticket-detail page and to the dashboard (with an active `?view=` filter) both land on the correctly
+localized, correctly-RTL/LTR `/login` page with `next` preserved; a wrong password shows the
+bilingual "Invalid credentials" error inline with no redirect loop; correct credentials sign in and
+land back on the originally-requested page. `tsc --noEmit`, `npm run build` (now also emitting
+`/ar/login` and `/en/login`), and `check-i18n-literals.sh` all still pass; backend untouched, 18/18
+backend unit tests still pass.
+
 ---
 
 ## Batch 4f — F05: SLA policies, pause accounting, breach derivation, sweep job, round-robin
