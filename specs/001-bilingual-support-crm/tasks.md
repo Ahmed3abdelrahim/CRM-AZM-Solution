@@ -407,26 +407,75 @@ available RAM and fix the embedding model (`BAAI/bge-m3` int8, 1024-dim, ≥16 G
 dimension (already `vector(1024)` in Batch 4a's migration per `data-model.md`) is not casually
 changed once populated.
 
-- [ ] T101 [P] Create `backend/app/schemas/kb_article.py` — `KbArticle`, `KbArticleCreate`,
+- [X] T101 [P] Create `backend/app/schemas/kb_article.py` — `KbArticle`, `KbArticleCreate`,
       `KbArticleUpdate`, `KbSearchResult` per `contracts/openapi.yaml` (depends on T005)
-- [ ] T102 Create `backend/app/repositories/kb_repository.py` — `KbArticleRepository`
+- [X] T102 Create `backend/app/repositories/kb_repository.py` — `KbArticleRepository`
       (`ScopedRepository[KbArticle]`, `scoping_mode=S2_BRANCH_DEPT_OPTIONAL`) plus the hybrid
       search query builder (`pg_trgm` lexical + `pgvector` cosine, reciprocal-rank-fused) (depends
       on T031, T023)
-- [ ] T103 Create `backend/app/services/kb_service.py` — `create_article`, `update_article`
+- [X] T103 Create `backend/app/services/kb_service.py` — `create_article`, `update_article`
       (chunks ~500 tokens/50 overlap per locale, embeds via the fixed model from the pre-batch
       checkpoint, writes `kb_article_chunks`), `publish_article` (422 unless all four
       title/body fields non-empty, FR-041), `search` (calls the hybrid query, reranks with
       `bge-reranker-v2-m3` behind a feature flag, else returns fused order — FR-043) — exactly per
       `plan.md` §Service Classes (depends on T102)
-- [ ] T104 Create `backend/app/api/routers/kb.py` — `/kb/articles*`, `/kb/search` per
+- [X] T104 Create `backend/app/api/routers/kb.py` — `/kb/articles*`, `/kb/search` per
       `contracts/openapi.yaml` (depends on T103)
-- [ ] T105 Wire `kb.py` into `backend/app/api/router.py` (depends on T104)
-- [ ] T106 [P] Create `frontend/app/[locale]/(agent)/kb/page.tsx` — article list, editor
+- [X] T105 Wire `kb.py` into `backend/app/api/router.py` (depends on T104)
+- [X] T106 [P] Create `frontend/app/[locale]/(agent)/kb/page.tsx` — article list, editor
       (bilingual title/body fields, publish action), search box (depends on T043)
+
+**Pre-batch checkpoint resolution (this run)**: the user's explicit instruction fixed the
+decision this checkpoint exists to make — `vector(1024)`/`BAAI/bge-m3` stays as already migrated
+in Batch 4a, regardless of RAM, because the column "must not change." Device selection is instead
+made configurable: `Settings.EMBEDDING_DEVICE` (default `"auto"` — probes `torch.cuda.is_available()`,
+falls back to CPU; `app/ai/embeddings.py::resolve_device`), so the same code runs unchanged on
+this CPU-only laptop (confirmed no GPU passthrough into the `backend` container — `torch.cuda.is_available()`
+is `False` here) and on GPU hardware later, without a code change — only `EMBEDDING_DEVICE`/infra
+GPU passthrough differ. Reranking (`bge-reranker-v2-m3`, `app/ai/reranker.py`) is gated by
+`Settings.KB_RERANK_ENABLED`, default `false`.
+
+**Cross-batch follow-up, in scope for this run**: `AiService.suggest_solution` (Batch 4h,
+`app/services/ai_service.py`) had an interim `return []` stub with its own docstring pointing at
+this exact batch to complete it. Replaced with a real `KbService(...).search()` call over the
+ticket's subject+description (FR-047), matching `plan.md`'s documented method body; `ai.py`'s
+`suggested-solution` route now declares `response_model=list[KbSearchResult]`; the frontend's
+`AiSuggestedSolutionPanel` (`tickets/[id]/page.tsx`) now renders the real
+title/body per `matched_locale` instead of `JSON.stringify`. `frontend/lib/api-client.ts`'s
+`KbSearchResult` type is no longer `unknown`. No 4f work touched.
+
+**Seed backfill (this run, `backend/app/seed/seed.py`)**: the 10 seeded articles (`T136`, Batch
+4i) were inserted directly via `upsert()`, bypassing `KbService.create_article`, so they carried
+no `kb_article_chunks`. Added `seed_kb_article_embeddings()` (called from `run()` right after
+`seed_kb_articles()`) — chunks + embeds every published article missing chunks, skipped
+per-article (not just via `ON CONFLICT DO NOTHING`) so a repeat seed run doesn't re-invoke the
+embedding model. Also added the three `kb_article.read`/`.create`/`.publish` permission codes to
+`PERMISSIONS` (read → `agent`/`lead`/`admin`; create/publish → `lead`/`admin`), matching
+`contracts/openapi.yaml`'s `x-permission` values — these didn't exist yet since no earlier batch
+had a KB router.
 
 **Gate (PLAN.md §6)**: An Arabic-language query and an English-language query for the same
 underlying concept both return the same seeded bilingual article, ranked above unrelated ones.
+
+**Gate verification (this run)**: Backend image rebuilt with `sentence-transformers` (new
+`pyproject.toml` dependency); `docker compose exec backend python -m app.seed.seed` ran the
+backfill — BGE-M3 downloaded once via `hf_xet` (~2.2GB, one-time), then `[seed] kb_article_chunks:
+20 chunk(s) embedded for 10 article(s)` (10 articles × 2 locales × 1 chunk each — every seeded
+body is short enough to fit in one ~500-token chunk). Verified directly against Postgres: 20
+`kb_article_chunks` rows, 10 `ar` + 10 `en`. Logged in as the seeded `agent`
+(`ahmed.hassan@azm-crm.example`, Cairo/Customer Support) and called `GET /kb/search` twice — once
+with the Arabic query "نسيت كلمة المرور" ("forgot my password"), once with the English query
+"forgot my password" — both ranked the seeded `password-reset` article #1 (fused score `0.03279`
+in both cases; the other four Cairo articles trail at `~0.031x`), matching FR-042/FR-043 and
+spec.md Story 6's two acceptance scenarios. (An earlier attempt to hit the endpoint via `curl`
+with the Arabic query passed inline as a Bash-tool shell argument produced a wrong top result —
+traced to the query bytes being corrupted by the Windows console codepage before reaching curl,
+the exact failure mode `seed.py`'s own docstring already warns about; routing the query through a
+UTF-8 Python source file instead — never a shell argument — reproduced the correct ranking above.
+Raw `similarity()` against Postgres directly (`password-reset` 0.160 vs. the next-highest article
+0.053) independently confirms the lexical half's ranking is correct.) Also verified: `pytest
+backend/tests` still 18/18; `tsc --noEmit`, `npm run build` (now also emitting `/ar/kb` and
+`/en/kb`), `check-i18n-literals.sh`, and the T087-style RTL-utility grep all pass clean.
 
 ---
 
