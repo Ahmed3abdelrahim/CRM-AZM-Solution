@@ -895,6 +895,33 @@ async def seed_tickets(
     await upsert(session, TicketEvent, event_rows)
 
 
+async def sync_ticket_reference_sequence(session: AsyncSession) -> None:
+    """`seed_tickets()` above inserts explicit `reference_no` values (`TKT-{year}-{6-digit}`) as
+    part of its idempotent `ON CONFLICT DO NOTHING` upsert, and never touches
+    `ticket_reference_seq` (the DB sequence `TicketService._generate_reference_no` — batch 4d —
+    draws from for every real `POST /tickets`). Left alone, the sequence starts at 1 while seeded
+    reference numbers already occupy 1..40, so ticket creation collides
+    (`UniqueViolationError`) until enough calls advance it past 40.
+
+    `GREATEST` against the sequence's own current `last_value` makes this safe to call every seed
+    run (idempotent — never moves the sequence backwards) and safe even if real tickets were
+    already created via the API before/between seed runs."""
+
+    result = await session.execute(
+        text("SELECT COALESCE(MAX(split_part(reference_no, '-', 3)::bigint), 0) FROM tickets")
+    )
+    max_suffix = result.scalar_one()
+    result = await session.execute(
+        text(
+            "SELECT setval('ticket_reference_seq', "
+            "GREATEST(:max_suffix, (SELECT last_value FROM ticket_reference_seq)))"
+        ),
+        {"max_suffix": max_suffix},
+    )
+    new_value = result.scalar_one()
+    print(f"[seed] ticket_reference_seq synced to {new_value} (highest seeded reference: {max_suffix}).")
+
+
 # --------------------------------------------------------------------------------------------
 # Post-seed verification — re-reads every label_ar and every Arabic ticket subject straight
 # back from Postgres and confirms each one starts with a U+06xx (Arabic block) codepoint,
@@ -949,6 +976,7 @@ async def run() -> None:
         customers = await seed_customers(session)
         await seed_kb_articles(session, category_ids)
         await seed_tickets(session, status_ids, priority_ids, category_ids, customers, sla_ids)
+        await sync_ticket_reference_sequence(session)
         await session.commit()
 
         await verify_arabic_integrity(session)

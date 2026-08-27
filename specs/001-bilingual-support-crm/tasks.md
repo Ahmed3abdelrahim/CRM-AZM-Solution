@@ -524,13 +524,16 @@ unreachable."
   `tests/golden/bilingual_tickets.json` 500'd until `./tests:/app/tests` was added to that
   service's volumes (the file is present in the built image via the Dockerfile's `COPY . .`; only
   the dev bind-mount was missing it).
-- Pre-existing, **not fixed in code** (out of Batch 4h's scope — this is a Batch 4i/`seed.py`
-  concern): `ticket_reference_seq` sits at a low value while the seed script inserted `tickets`
-  rows with static `TKT-2026-000001`…`000040` reference numbers without advancing the sequence, so
-  `POST /tickets` collides (`UniqueViolationError`) until the sequence passes 40. Worked around
-  locally with `SELECT setval('ticket_reference_seq', 100)` to unblock this batch's live
-  verification; flagging for whoever next touches `seed.py` rather than silently patching seed
-  logic under an AI-batch task.
+- Pre-existing (Batch 4i/`seed.py` — out of Batch 4h's own file list, but **fixed** per explicit
+  follow-up instruction after this batch): `ticket_reference_seq` sat at a low value while the
+  seed script inserted `tickets` rows with static `TKT-2026-000001`…`000040` reference numbers
+  without ever advancing the sequence, so `POST /tickets` collided (`UniqueViolationError`) until
+  the sequence passed 40. Fixed in `backend/app/seed/seed.py` — new
+  `sync_ticket_reference_sequence()`, called at the end of `run()` right after `seed_tickets()`:
+  `setval`s `ticket_reference_seq` to `GREATEST(max(reference_no)'s numeric suffix, the
+  sequence's own current last_value)`, so it only ever moves forward — idempotent across repeat
+  seed runs (verified: two consecutive runs produced identical `tickets`/`ticket_events` row
+  counts, T137) and safe even if real tickets were already created via the API between runs.
 
 ---
 
