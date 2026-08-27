@@ -348,52 +348,106 @@ backend unit tests still pass.
 **Contents (PLAN.md §6)**: F05 — SLA policies, pause accounting, breach derivation, sweep job,
 round-robin.
 
-- [ ] T088 [P] In `backend/app/services/admin_crud_service.py`, add `SlaPolicyCrudService` thin
+- [X] T088 [P] In `backend/app/services/admin_crud_service.py`, add `SlaPolicyCrudService` thin
       subclass (`read_permission="sla_policy.read"`, `has_soft_delete=False`) (depends on T048)
-- [ ] T089 [P] Create `backend/app/schemas/sla_policy.py` — `SlaPolicy`, `SlaPolicyCreate`,
+- [X] T089 [P] Create `backend/app/schemas/sla_policy.py` — `SlaPolicy`, `SlaPolicyCreate`,
       `SlaPolicyUpdate` per `contracts/openapi.yaml` (depends on T005)
-- [ ] T090 Create `backend/app/services/sla_service.py` — `compute_due_dates` (pure function:
+- [X] T090 Create `backend/app/services/sla_service.py` — `compute_due_dates` (pure function:
       `created_at` + policy + `sla_paused_ms` + business-hours/timezone when
       `business_hours_only`), `compute_breach_state` (pure function: on_track/at_risk <25%
       remaining/breached), `resolve_policy` (exact category+priority → priority-only →
       category-only → default), `override_policy` (existing policies only, reason required,
       recomputes from original `created_at`, permits an immediately-breaching result) — exactly
-      per `plan.md` §Service Classes (depends on T018, T031)
-- [ ] T091 Complete `backend/app/services/ticket_service.py`'s `create()` to call
+      per `plan.md` §Service Classes (depends on T018, T031) — also replaces
+      `ticket_service.py`'s `attach_sla_placeholders` (a Batch 4d stub that always returned
+      `None`/`None`/`None`) with `attach_computed_sla`, which calls these two pure functions for
+      real; every `Ticket`-returning call site (`TicketService`, `TicketTransitionService`,
+      `AiService`) now shows a live computed `sla_first_response_due_at`/`sla_resolution_due_at`/
+      `sla_breach_state` — not part of T090's literal text, but the batch gate (breach state
+      identical after `docker compose restart`) is unverifiable against three permanently-`None`
+      fields, and Batch 4d's own stub comment explicitly named T090 as the batch that would
+      replace it.
+- [X] T091 Complete `backend/app/services/ticket_service.py`'s `create()` to call
       `SlaService.resolve_policy` for real (removing Batch 4d's stub) (depends on T090, T073)
-- [ ] T092 Create `backend/app/services/assignment_service.py` — `auto_assign_ticket`:
+- [X] T092 Create `backend/app/services/assignment_service.py` — `auto_assign_ticket`:
       round-robin over active `ticket.own`-holding, non-unavailable agents in the ticket's
-      department; returns `None` if none eligible (depends on T018, T031)
-- [ ] T093 Add `sweep_breaches` to `backend/app/services/sla_service.py` — for every open ticket
+      department; returns `None` if none eligible (depends on T018, T031). No `unavailable`
+      column exists anywhere in `data-model.md`'s `users` table, so "not flagged unavailable" is
+      implemented as `is_active=True` — the only availability flag the schema models. Round-robin
+      state is derived, not stored: the next eligible agent after whoever was assigned the most
+      recently updated ticket in the department, wrapping around (no new schema column added).
+- [X] T093 Add `sweep_breaches` to `backend/app/services/sla_service.py` — for every open ticket
       whose computed state is `breached` with no existing `sla_breached` event for its current
       target: write one, raise priority one severity level, reassign to the department's lead;
       idempotent by construction (checks for an existing event first) (depends on T090, T019)
-- [ ] T094 Create `backend/app/jobs/worker.py` — ARQ `WorkerSettings` registering the jobs below
-      (depends on T005)
-- [ ] T095 [P] Create `backend/app/jobs/sla_sweep_job.py` — runs `SlaService.sweep_breaches()`
+- [X] T094 Create `backend/app/jobs/worker.py` — ARQ `WorkerSettings` registering the jobs below
+      (depends on T005) — `sla_sweep_job` is registered via ARQ's `cron_jobs` (every 5 minutes,
+      `minute=set(range(0, 60, 5))`), not `functions`, since it runs on a schedule rather than
+      being enqueued by name.
+- [X] T095 [P] Create `backend/app/jobs/sla_sweep_job.py` — runs `SlaService.sweep_breaches()`
       every 5 minutes (depends on T093, T094)
-- [ ] T096 [P] Create `backend/app/jobs/categorization_job.py` — stub that calls
-      `AssignmentService.auto_assign_ticket` after categorization; the categorization call itself
-      is completed in Batch 4h — for this batch, the job body calls
-      `AssignmentService.auto_assign_ticket(ticket_id)` directly (depends on T092, T094)
-- [ ] T097 Add `POST /tickets/{id}/sla-override` to `backend/app/api/routers/tickets.py` (depends
+- [X] T096 [P] Complete `backend/app/jobs/categorization_job.py` (Batch 4h left it calling only
+      `AiService.categorize`, explicitly deferring this) to also call
+      `AssignmentService.auto_assign_ticket(ticket_id)` right after categorization completes, per
+      this run's explicit instruction (depends on T092, T094). `AiService.categorize` commits
+      internally (Batch 4h); `AssignmentService.auto_assign_ticket`/`SlaService.sweep_breaches`
+      only flush — the enclosing job body (`categorization_job`/`sla_sweep_job`) commits once,
+      keeping every other service method's "services don't commit, callers do" convention intact
+      and letting `tests/unit/test_sla_service.py`'s `db_session` fixture roll back cleanly.
+- [X] T097 Add `POST /tickets/{id}/sla-override` to `backend/app/api/routers/tickets.py` (depends
       on T090, T077)
-- [ ] T098 Add `/sla-policies` routes to `backend/app/api/routers/admin_config.py` (depends on
+- [X] T098 Add `/sla-policies` routes to `backend/app/api/routers/admin_config.py` (depends on
       T088, T089)
-- [ ] T099 Wire the Batch 4f router additions into `backend/app/api/router.py` (depends on T097,
-      T098)
-- [ ] T100 [P] Create `backend/tests/unit/test_sla_service.py` — pause accounting shifts the
+- [X] T099 Wire the Batch 4f router additions into `backend/app/api/router.py` (depends on T097,
+      T098) — no change needed: `tickets.router`/`admin_config.router` were already included by
+      earlier batches, and T097/T098 added their routes to those same router objects.
+- [X] T100 [P] Create `backend/tests/unit/test_sla_service.py` — pause accounting shifts the
       deadline by exactly the paused duration; business-hours policies don't accrue outside the
       branch's hours/timezone; `sweep_breaches()` run twice writes exactly one `sla_breached`
       event per ticket/target; an SLA override with an already-past recomputed deadline is
       permitted and produces a breach (Testing Proportionality — SLA computation) (depends on
-      T090, T093)
+      T090, T093) — 4/4 passing; `sweep_breaches()`'s idempotency assertions are scoped to the
+      test's own ticket (it scans every open ticket across every tenant, so its raw return count
+      also reflects whatever pre-existing seed data is in the database).
+
+**Also completed, not its own task ID but named directly in PLAN.md §6's own row for this batch
+("pause accounting")**: `TicketTransitionService.change_status`
+(`backend/app/services/ticket_transition_service.py`) now accumulates elapsed time into
+`sla_paused_ms` when a ticket leaves a `pauses_sla` status — "entering" one needs no new marker,
+since the `status_changed` event this method already always writes on the way in is itself the
+pause-start record (`data-model.md`'s `event_type` `CHECK` has no dedicated value for one, so
+this reuses the existing event rather than inventing one); the elapsed time is the gap since the
+most recent `status_changed` event (or the ticket's own `created_at`, for its very first
+transition).
 
 **Gate (PLAN.md §6)**: A ticket parked in a pause-accounting status for a fixed period shows a
 resolution deadline shifted out by exactly that period; restarting the entire stack
 (`docker compose restart`) and re-querying shows identical breach states for every ticket — no
 state held only in memory; running the breach sweep twice in a row produces zero additional
 `sla_breached` events on the second run.
+
+**Gate verification (this run)**: Verified live against the already-running `docker compose`
+stack (postgres/redis/minio/backend/arq-worker/frontend), logged in as the seeded
+`ahmed.hassan@azm-crm.example` (agent, CAI/SUPPORT):
+- `POST /tickets` with an existing category/priority resolved `sla_policy_id` to the branch's
+  default SLA policy (no exact/priority-only/category-only match existed for this pair) and
+  returned live-computed `sla_first_response_due_at`/`sla_resolution_due_at`/
+  `sla_breach_state="on_track"` — not `None`.
+- The ARQ worker log showed `categorization_job` running (falling back after the configured 60s
+  LLM timeout — same degraded-path environment as Batch 4h) followed immediately by an `assigned`
+  ticket event with a real `assignee_id` — `AssignmentService.auto_assign_ticket` wiring confirmed
+  end to end.
+- Moving that ticket into `pending_customer` (`pauses_sla=true`) then back out ~13 seconds later
+  moved `sla_paused_ms` from `0` to `12851` and shifted both due-date fields forward by the exact
+  same ~13 seconds — pause accounting confirmed live, not just in the unit test.
+- Captured `sla_first_response_due_at`/`sla_resolution_due_at`/`sla_breach_state` for every ticket
+  in the database carrying an `sla_policy_id`, ran `docker compose restart` (all six containers,
+  including postgres/redis), waited for `backend`'s healthcheck to pass again, and re-queried the
+  same tickets: byte-identical output — confirms nothing here was held only in memory.
+- `SlaService.sweep_breaches()` invoked twice in direct succession (both via the worker's own
+  5-minute cron tick and a manual double-invocation against the live database) wrote zero
+  additional `sla_breached` events on the second call.
+- `pytest backend/tests` — 22/22 passing (18 pre-existing + 4 new in `test_sla_service.py`).
 
 ---
 

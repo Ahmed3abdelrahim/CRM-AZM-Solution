@@ -20,6 +20,7 @@ from app.schemas.role import (
     RoleUpdate,
 )
 from app.schemas.quick_reply import QuickReply, QuickReplyCreate, QuickReplyUpdate
+from app.schemas.sla_policy import SlaPolicy, SlaPolicyCreate, SlaPolicyUpdate
 from app.schemas.team import Team, TeamCreate, TeamMemberCreate, TeamUpdate
 from app.schemas.ticket_taxonomy import (
     Category,
@@ -44,6 +45,7 @@ from app.services.admin_crud_service import (
     PriorityCrudService,
     QuickReplyCrudService,
     RoleCrudService,
+    SlaPolicyCrudService,
     TeamCrudService,
     TicketStatusCrudService,
 )
@@ -381,6 +383,25 @@ register_admin_crud_routes(
         "get": "getQuickReply",
         "update": "updateQuickReply",
         "remove": "deleteQuickReply",
+    },
+)
+
+
+# ---------------------------------------------------------------- Batch 4f: SLA policies (F05)
+register_admin_crud_routes(
+    router,
+    path="/sla-policies",
+    service_cls=SlaPolicyCrudService,
+    response_schema=SlaPolicy,
+    create_schema=SlaPolicyCreate,
+    update_schema=SlaPolicyUpdate,
+    remove_style="delete",
+    operation_ids={
+        "list": "listSlaPolicies",
+        "create": "createSlaPolicy",
+        "get": "getSlaPolicy",
+        "update": "updateSlaPolicy",
+        "remove": "deleteSlaPolicy",
     },
 )
 

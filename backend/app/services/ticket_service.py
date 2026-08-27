@@ -15,6 +15,7 @@ from app.core.errors import NotFoundError, ValidationError
 from app.core.permissions import CurrentActor, require_permission
 from app.core.storage import put_object
 from app.models.attachment import Attachment
+from app.models.branch import Branch
 from app.models.category import Category
 from app.models.customer import Customer
 from app.models.priority import Priority
@@ -28,17 +29,32 @@ from app.repositories.ticket_repository import TicketFilters, TicketRepository
 from app.schemas.ticket import TicketAssign, TicketCreate, TicketTriageCorrection, TicketUpdate
 
 
-def attach_sla_placeholders(ticket: Ticket) -> Ticket:
+async def attach_computed_sla(session: AsyncSession, ticket: Ticket) -> Ticket:
     """Sets the three query-time-computed, never-stored SLA fields
     (`sla_first_response_due_at`/`sla_resolution_due_at`/`sla_breach_state`, contracts/
     openapi.yaml's `Ticket` schema) as plain instance attributes — not mapped columns, so this
-    never touches a flush. Batch 4d has no `SlaService` yet (Batch 4f, T090), so every value is
-    `None` here; `TicketTransitionService` (app/services/ticket_transition_service.py) calls this
-    same helper so a status-changed response carries the identical (currently empty) shape."""
+    never touches a flush — via `SlaService.compute_due_dates`/`compute_breach_state` (Batch 4f,
+    T090). `TicketTransitionService` and `AiService` call this same helper so every
+    `Ticket`-returning response carries an identically computed shape (Principle XII — nothing
+    here is held only in memory, so the values are unchanged by a `docker compose restart`)."""
 
-    ticket.sla_first_response_due_at = None
-    ticket.sla_resolution_due_at = None
-    ticket.sla_breach_state = None
+    if ticket.sla_policy_id is None:
+        ticket.sla_first_response_due_at = None
+        ticket.sla_resolution_due_at = None
+        ticket.sla_breach_state = None
+        return ticket
+
+    from app.services.sla_service import SlaService  # local: avoid import cycle
+
+    policy = await session.get(SlaPolicy, ticket.sla_policy_id)
+    branch = await session.get(Branch, ticket.branch_id)
+    sla_service = SlaService(
+        session, TenantScope(branch_id=ticket.branch_id, department_id=ticket.department_id)
+    )
+    due_dates = sla_service.compute_due_dates(ticket, policy, branch)
+    ticket.sla_first_response_due_at = due_dates.first_response_due_at
+    ticket.sla_resolution_due_at = due_dates.resolution_due_at
+    ticket.sla_breach_state = sla_service.compute_breach_state(due_dates, datetime.now(UTC))
     return ticket
 
 
@@ -132,28 +148,6 @@ class TicketService:
             )
         return status_id
 
-    async def _resolve_sla_policy_stub(
-        self, branch_id: UUID, department_id: UUID, category_id: UUID, priority_id: UUID
-    ) -> UUID | None:
-        """Batch 4d stub, completed for real in Batch 4f (T091): exact category+priority match
-        only, department-specific row preferred over the `NULL`-department default. Batch 4f's
-        `SlaService.resolve_policy` replaces this with the full exact → priority-only →
-        category-only → default resolution order (data-model.md §1.19 index)."""
-
-        stmt = (
-            select(SlaPolicy.id)
-            .where(
-                SlaPolicy.branch_id == branch_id,
-                SlaPolicy.category_id == category_id,
-                SlaPolicy.priority_id == priority_id,
-                (SlaPolicy.department_id == department_id) | (SlaPolicy.department_id.is_(None)),
-            )
-            .order_by(SlaPolicy.department_id.is_(None))
-            .limit(1)
-        )
-        result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
-
     async def _generate_reference_no(self) -> str:
         """`TKT-{YYYY}-{6-digit sequence}` (data-model.md §1.16) — the numeric part comes from
         the DB sequence `ticket_reference_seq` (created in Batch 4a's migration); the year comes
@@ -209,7 +203,7 @@ class TicketService:
         if ticket is None:
             raise self._not_found(id)
         ticket.customer = await self.session.get(Customer, ticket.customer_id)  # FR-028
-        return attach_sla_placeholders(ticket)
+        return await attach_computed_sla(self.session, ticket)
 
     @require_permission("ticket.create")
     async def create(self, actor: CurrentActor, data: TicketCreate) -> Ticket:
@@ -218,11 +212,15 @@ class TicketService:
 
     @audited("ticket", "create")
     async def _create_audited(self, actor: CurrentActor, id: None, data: TicketCreate) -> Ticket:
+        from app.services.sla_service import SlaService  # local: avoid import cycle
+
         reference_no = await self._generate_reference_no()
         status_id = await self._resolve_initial_status_id(data.branch_id, data.department_id)
-        sla_policy_id = await self._resolve_sla_policy_stub(
+        sla_service = SlaService(self.session, self.scope)
+        sla_policy = await sla_service.resolve_policy(
             data.branch_id, data.department_id, data.category_id, data.priority_id
         )
+        sla_policy_id = sla_policy.id if sla_policy is not None else None
 
         values = data.model_dump()
         values.update(
@@ -246,7 +244,7 @@ class TicketService:
         await self.session.flush()
 
         _enqueue_categorization_job(ticket.id)
-        return attach_sla_placeholders(ticket)
+        return await attach_computed_sla(self.session, ticket)
 
     @require_permission("ticket.create")
     @audited("ticket", "update")
@@ -257,7 +255,7 @@ class TicketService:
         values = data.model_dump(exclude_unset=True)
         values["updated_by"] = actor.user_id
         updated = await self.repository.update(id, values)
-        return attach_sla_placeholders(updated)
+        return await attach_computed_sla(self.session, updated)
 
     @require_permission("ticket.assign")
     async def assign(self, actor: CurrentActor, id: UUID, data: TicketAssign) -> Ticket:
@@ -270,7 +268,7 @@ class TicketService:
             raise self._not_found(id)
         values = data.model_dump(exclude_unset=True)
         if not values:
-            return attach_sla_placeholders(ticket)
+            return await attach_computed_sla(self.session, ticket)
 
         was_assigned = ticket.assignee_id is not None
         values["updated_by"] = actor.user_id
@@ -293,7 +291,7 @@ class TicketService:
             )
         )
         await self.session.flush()
-        return attach_sla_placeholders(updated)
+        return await attach_computed_sla(self.session, updated)
 
     @require_permission("ticket.read")
     async def add_note(self, actor: CurrentActor, id: UUID, body: str) -> TicketEvent:
@@ -423,7 +421,7 @@ class TicketService:
             },
         )
         await self.session.flush()
-        return attach_sla_placeholders(updated)
+        return await attach_computed_sla(self.session, updated)
 
     @require_permission("ticket.read")
     async def get_events(self, actor: CurrentActor, id: UUID) -> list[TicketEvent]:

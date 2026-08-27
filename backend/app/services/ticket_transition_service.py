@@ -15,7 +15,7 @@ from app.models.ticket_event import TicketEvent
 from app.models.ticket_status import TicketStatus
 from app.repositories.scoped_repository import TenantScope
 from app.repositories.ticket_repository import TicketRepository
-from app.services.ticket_service import attach_sla_placeholders
+from app.services.ticket_service import attach_computed_sla
 
 
 class TicketTransitionService:
@@ -87,6 +87,7 @@ class TicketTransitionService:
                 "A reason is required for this status transition",
             )
 
+        from_status = await self.session.get(TicketStatus, from_status_id)
         to_status = await self.session.get(TicketStatus, to_status_id)
 
         values: dict = {"status_id": to_status_id, "updated_by": actor.user_id}
@@ -97,6 +98,23 @@ class TicketTransitionService:
             # reopen transitions (resolved/closed -> reopened); reusing this data-driven field
             # avoids special-casing the "reopened" status code (Principle XI).
             values["reopened_count"] = ticket.reopened_count + 1
+        if from_status is not None and from_status.pauses_sla:
+            # F05 (pause accounting): leaving a pauses_sla status accumulates the time spent in
+            # it into sla_paused_ms. "Entering" a pauses_sla status needs no separate marker —
+            # the status_changed event this same method always writes on the way in already
+            # records exactly when the ticket entered it (data-model.md's event_type CHECK has
+            # no dedicated pause-start value, so this reuses the existing event instead of
+            # inventing one); the most recent such event (or, for a ticket's very first
+            # transition, its own created_at) is that entry time.
+            last_status_change = await self.session.execute(
+                select(TicketEvent.created_at)
+                .where(TicketEvent.ticket_id == id, TicketEvent.event_type == "status_changed")
+                .order_by(TicketEvent.created_at.desc())
+                .limit(1)
+            )
+            entered_at = last_status_change.scalar_one_or_none() or ticket.created_at
+            elapsed_ms = max(int((datetime.now(UTC) - entered_at).total_seconds() * 1000), 0)
+            values["sla_paused_ms"] = ticket.sla_paused_ms + elapsed_ms
 
         updated = await self.repository.update(id, values)
 
@@ -114,4 +132,4 @@ class TicketTransitionService:
             )
         )
         await self.session.flush()
-        return attach_sla_placeholders(updated)
+        return await attach_computed_sla(self.session, updated)

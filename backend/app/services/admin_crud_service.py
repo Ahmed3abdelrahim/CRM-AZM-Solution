@@ -16,6 +16,7 @@ from app.models.department import Department
 from app.models.priority import Priority
 from app.models.quick_reply import QuickReply
 from app.models.role import Permission, Role, RolePermission
+from app.models.sla_policy import SlaPolicy
 from app.models.team import Team, TeamMember
 from app.models.ticket_status import TicketStatus
 from app.repositories.scoped_repository import ScopedRepository, ScopingMode, TenantScope
@@ -252,3 +253,18 @@ class QuickReplyCrudService(AdminCrudService[QuickReply, Any, Any]):
     repository_cls = _QuickReplyRepository
     entity_type = "quick_reply"
     read_permission = "quick_reply.read"
+
+
+class _SlaPolicyRepository(ScopedRepository[SlaPolicy]):
+    model = SlaPolicy
+    scoping_mode = ScopingMode.S2_BRANCH_DEPT_OPTIONAL
+    has_soft_delete = False
+
+
+class SlaPolicyCrudService(AdminCrudService[SlaPolicy, Any, Any]):
+    """Thin CRUD subclass — Batch 4f (T088). data-model.md §1.19: no `is_active`/`sort_order` —
+    hard DELETE, RESTRICT-guarded by `tickets.sla_policy_id` referencing it."""
+
+    repository_cls = _SlaPolicyRepository
+    entity_type = "sla_policy"
+    read_permission = "sla_policy.read"

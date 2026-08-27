@@ -35,7 +35,7 @@ import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select, text
+from sqlalchemy import bindparam, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -60,6 +60,8 @@ from app.models.ticket_event import TicketEvent
 from app.models.ticket_status import TicketStatus
 from app.models.user import User
 from app.models.user_role import UserRole
+from app.repositories.scoped_repository import TenantScope
+from app.services.sla_service import SlaService
 
 SEED_NAMESPACE = uuid.UUID("2f9a6f0e-2b7a-4b7a-9c0b-2f0f6b6e9a10")
 ARABIC_BLOCK = range(0x0600, 0x0700)
@@ -845,12 +847,16 @@ async def seed_tickets(
     priority_ids: dict[str, dict[str, uuid.UUID]],
     category_ids: dict[str, dict[str, uuid.UUID]],
     customers: dict[str, list[dict]],
-    sla_ids: dict[str, uuid.UUID],
 ) -> None:
     now = datetime.now(UTC)
     status_cycle = [code for code, *_ in STATUS_DEFS]
     priority_cycle = [code for code, *_ in PRIORITY_DEFS]
-    urgent_sla_id = sla_ids["urgent"]
+    # Same resolution order SlaService.resolve_policy uses for a real POST /tickets (exact
+    # category+priority -> priority-only -> category-only -> default) — reused directly, not
+    # reimplemented, so seeded tickets are never resolved by a second, silently-divergent copy
+    # of this logic. RUH (branch B) has no seeded sla_policies rows at all (PLAN.md §7: 3 total,
+    # a demo-path asset against branch A only) so every RUH ticket legitimately resolves to None.
+    sla_service = SlaService(session, TenantScope(branch_id=None, department_id=None, cross_branch=True))
 
     rows = []
     event_rows = []
@@ -894,20 +900,28 @@ async def seed_tickets(
             else None
         )
 
+        department_id = customer["department_id"]
+        category_id = category_ids[branch_key][leaf_key]
+        priority_id = priority_ids[branch_key][priority_code]
+        resolved_policy = await sla_service.resolve_policy(
+            branch_id, department_id, category_id, priority_id
+        )
+        sla_policy_id = resolved_policy.id if resolved_policy is not None else None
+
         rows.append(dict(
             id=ticket_id,
-            branch_id=branch_id, department_id=customer["department_id"],
+            branch_id=branch_id, department_id=department_id,
             reference_no=f"TKT-{now.year}-{i + 1:06d}",
             customer_id=customer["id"],
             subject=subj_ar if is_ar else subj_en,
             description=desc_ar if is_ar else desc_en,
-            category_id=category_ids[branch_key][leaf_key],
-            priority_id=priority_ids[branch_key][priority_code],
+            category_id=category_id,
+            priority_id=priority_id,
             status_id=status_ids[branch_key][status_code],
             assignee_id=agent_id if is_progressed else None,
             channel=channel,
             source_locale="ar" if is_ar else "en",
-            sla_policy_id=urgent_sla_id if (pre_breaching and branch_key == "CAI") else None,
+            sla_policy_id=sla_policy_id,
             first_response_at=first_response_at,
             resolved_at=resolved_at,
             closed_at=closed_at,
@@ -961,7 +975,35 @@ async def seed_tickets(
         ))
 
     await upsert(session, Ticket, rows)
+    await _backfill_ticket_sla_policy(session, rows)
     await upsert(session, TicketEvent, event_rows)
+
+
+async def _backfill_ticket_sla_policy(session: AsyncSession, rows: list[dict]) -> None:
+    """`upsert()` above is insert-only (`ON CONFLICT (id) DO NOTHING`) — against a database
+    already seeded before `sla_policy_id` resolution existed, it silently leaves every
+    already-inserted ticket's `sla_policy_id` at whatever it was (`NULL`, for most of them).
+    This fills in exactly those still-`NULL` rows with the value just resolved above — and only
+    those: a ticket whose `sla_policy_id` was later legitimately set (an already-resolved value
+    from a fresh seed run, or a real `POST /tickets/{id}/sla-override`) is never touched, so this
+    stays idempotent — the first run heals the gap, every run after is a no-op."""
+
+    # `update(Ticket.__table__)` (Core, not the mapped class) avoids SQLAlchemy 2.0's ORM-enabled
+    # "bulk UPDATE by primary key" path, which demands the primary key under its real column
+    # name in every params dict rather than a bound parameter — irrelevant for a plain Core
+    # executemany like this one.
+    stmt = (
+        update(Ticket.__table__)
+        .where(Ticket.id == bindparam("ticket_id"), Ticket.sla_policy_id.is_(None))
+        .values(sla_policy_id=bindparam("new_sla_policy_id"))
+    )
+    params = [
+        {"ticket_id": row["id"], "new_sla_policy_id": row["sla_policy_id"]}
+        for row in rows
+        if row["sla_policy_id"] is not None
+    ]
+    if params:
+        await session.execute(stmt, params)
 
 
 async def sync_ticket_reference_sequence(session: AsyncSession) -> None:
@@ -1039,13 +1081,13 @@ async def run() -> None:
         category_ids = await seed_categories(session)
         priority_ids = await seed_priorities(session)
         status_ids = await seed_statuses_and_transitions(session)
-        sla_ids = await seed_sla_policies(session, category_ids, priority_ids)
+        await seed_sla_policies(session, category_ids, priority_ids)
         await seed_quick_replies(session)
         await seed_channel_configs(session, category_ids)
         customers = await seed_customers(session)
         await seed_kb_articles(session, category_ids)
         await seed_kb_article_embeddings(session)
-        await seed_tickets(session, status_ids, priority_ids, category_ids, customers, sla_ids)
+        await seed_tickets(session, status_ids, priority_ids, category_ids, customers)
         await sync_ticket_reference_sequence(session)
         await session.commit()
 

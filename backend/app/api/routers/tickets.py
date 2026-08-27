@@ -11,6 +11,7 @@ from app.repositories.ticket_repository import TicketFilters
 from app.schemas.customer import Attachment
 from app.schemas.ticket import (
     IllegalTransitionError as IllegalTransitionErrorSchema,
+    SlaOverrideRequest,
     Ticket,
     TicketAssign,
     TicketCreate,
@@ -22,6 +23,7 @@ from app.schemas.ticket import (
     TicketTriageCorrection,
     TicketUpdate,
 )
+from app.services.sla_service import SlaService
 from app.services.ticket_service import TicketService
 from app.services.ticket_transition_service import TicketTransitionService
 
@@ -129,6 +131,21 @@ async def assign_ticket(
 ):
     service = TicketService(session, actor.scope)
     return await service.assign(actor, id, data)
+
+
+@router.post(
+    "/tickets/{id}/sla-override",
+    response_model=Ticket,
+    operation_id="overrideTicketSla",
+)
+async def override_ticket_sla(
+    id: UUID,
+    data: SlaOverrideRequest,
+    actor: CurrentActor = Depends(get_current_actor),
+    session: AsyncSession = Depends(get_session),
+):
+    service = SlaService(session, actor.scope)
+    return await service.override_policy(actor, id, data.sla_policy_id, data.reason)
 
 
 @router.get("/tickets/{id}/events", response_model=list[TicketEvent], operation_id="getTicketEvents")

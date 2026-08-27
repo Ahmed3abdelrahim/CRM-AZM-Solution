@@ -22,7 +22,7 @@ from app.repositories.ticket_repository import TicketRepository
 from app.schemas.ai import AiSuggestedReplyResponse, AiSummaryResponse, BenchmarkResult
 from app.schemas.kb_article import KbSearchResult
 from app.services.kb_service import KbService
-from app.services.ticket_service import attach_sla_placeholders
+from app.services.ticket_service import attach_computed_sla
 
 logger = structlog.get_logger(__name__)
 
@@ -194,7 +194,7 @@ class AiService:
             )
         )
         await self.session.flush()
-        return attach_sla_placeholders(ticket)
+        return await attach_computed_sla(self.session, ticket)
 
     @require_permission("admin.config")
     async def run_categorization_benchmark(self, actor: CurrentActor) -> BenchmarkResult:
