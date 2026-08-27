@@ -10,6 +10,7 @@ backend/.env
 node_modules/
 .next/
 frontend/.env*
+*.tsbuildinfo
 
 # Universal
 .DS_Store

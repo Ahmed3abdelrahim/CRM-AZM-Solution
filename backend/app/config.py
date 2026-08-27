@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     LITELLM_API_KEY: str
     LITELLM_MODEL_CHAT: str
     LITELLM_MODEL_CLASSIFY: str
+    # PLAN.md F07 specifies 10s; docs/DEBT.md D13 documents the local dev override to 60s for
+    # CPU-only inference (LiteLlmWrapper's own default of 10.0 stays the production-intended one).
+    LITELLM_TIMEOUT_SECONDS: float = 10.0
+    LITELLM_MAX_RETRIES: int = 1
 
     JWT_SECRET: str
     JWT_ACCESS_TTL_MINUTES: int = 15

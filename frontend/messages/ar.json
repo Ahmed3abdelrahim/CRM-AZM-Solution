@@ -157,6 +157,17 @@
     "uploadButton": "رفع مرفق",
     "uploading": "جارٍ الرفع…",
     "reopenedCount": "عدد مرات إعادة الفتح",
-    "firstResponseAt": "وقت أول رد"
+    "firstResponseAt": "وقت أول رد",
+    "aiSummaryTitle": "ملخص بالذكاء الاصطناعي",
+    "aiSummaryButton": "الحصول على ملخص بالذكاء الاصطناعي",
+    "aiSummaryFallbackNote": "الذكاء الاصطناعي غير متاح حاليًا — يتم عرض بداية الوصف بدلاً من ذلك.",
+    "aiSuggestReplyButton": "اقتراح رد (ذكاء اصطناعي)",
+    "aiSuggestReplyFallbackNote": "الذكاء الاصطناعي غير متاح حاليًا — يرجى كتابة الرد يدويًا.",
+    "aiSuggestedSolutionTitle": "مقالات مقترحة من قاعدة المعرفة",
+    "aiCategorizationTitle": "اقتراح التصنيف بالذكاء الاصطناعي",
+    "aiCategorizationConfidence": "درجة الثقة",
+    "aiCategorizationAcceptButton": "قبول",
+    "aiCategorizationOverrideButton": "استخدام هذا التصنيف بدلاً منه",
+    "aiCategorizationOverrideLabel": "تصنيف بديل"
   }
 }

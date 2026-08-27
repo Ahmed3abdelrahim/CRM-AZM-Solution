@@ -24,6 +24,7 @@ An undocumented shortcut is a violation. If you take one during implementation, 
 | D10 | Audit rows written from day one, but no browsing interface | Searchable, filterable audit log UI with export | Before any compliance review. The data is complete — only the reader is missing | 0.5 day |
 | D11 | i18n enforcement is a grep check, not an ESLint rule | Proper ESLint rule integrated in CI | Phase 2 |
 | D12 | Admin configuration is API-only; no UI for branches, departments, users, roles, taxonomy, SLA policies, quick replies, or teams | Admin UI screens under `frontend/app/[locale]/(agent)/admin/`, one per `admin_config.py` router group | Before handover to non-technical administrators | 1–2 days |
+| D13 | `LITELLM_TIMEOUT_SECONDS=60` (dev override; `LiteLlmWrapper`'s coded default stays PLAN.md F07's 10s) — CPU-only local inference (Ollama, no GPU during dev) is far slower per call than the 10s budget assumes | 10s timeout, one retry, against a GPU-backed endpoint (self-hosted or remote, per D07) | GPU hardware available for LLM inference, restoring PLAN.md F07's original latency budget | Config-only — 1 line |
 ---
 
 ## Standing constraints these shortcuts must not violate
@@ -44,4 +45,4 @@ If a proposed shortcut touches any of the above, it is not debt. It is a design 
 
 This register is checked against `PLAN.md` §8 as part of the Definition of Done (`PLAN.md` §10). The sprint is not complete until the two agree.
 
-**Last updated**: 2026-08-25 · **Constitution version**: 1.0.0
+**Last updated**: 2026-08-27 · **Constitution version**: 1.0.0

@@ -437,35 +437,44 @@ four fallbacks, Langfuse → per `docs/architecture/stack.md` rev 2, this is the
 `llm_calls` table (Batch 4a), not Langfuse; no task here re-adds infrastructure Batch 4a already
 provides.
 
-- [ ] T107 [P] Create `backend/app/schemas/ai.py` — `AiSummaryResponse`,
+- [X] T107 [P] Create `backend/app/schemas/ai.py` — `AiSummaryResponse`,
       `AiSuggestedReplyResponse`, `CategorizationDecision`, `BenchmarkResult` per
       `contracts/openapi.yaml` (depends on T005)
-- [ ] T108 Create `backend/app/ai/categorization.py` — prompt template + `AiService.categorize`
+- [X] T108 Create `backend/app/ai/categorization.py` — prompt template + `AiService.categorize`
       body: calls `LiteLlmWrapper.complete(LlmCapability.CATEGORIZE, ...)`, writes
       `ai_suggested_category_id`/`ai_category_confidence` directly (never `category_id`); on
       `fallback_used`, leaves both `NULL` (depends on T035, T018)
-- [ ] T109 [P] Create `backend/app/ai/summary.py` — prompt template + `AiService.summarize` body;
+- [X] T109 [P] Create `backend/app/ai/summary.py` — prompt template + `AiService.summarize` body;
       fallback: first 300 characters of `description` (depends on T035)
-- [ ] T110 [P] Create `backend/app/ai/suggested_reply.py` — prompt template +
+- [X] T110 [P] Create `backend/app/ai/suggested_reply.py` — prompt template +
       `AiService.suggest_reply` body; fallback: empty draft; output locale always matches
       `tickets.source_locale` (depends on T035)
-- [ ] T111 Create `backend/app/services/ai_service.py` — `summarize`, `suggest_reply`,
+- [X] T111 Create `backend/app/services/ai_service.py` — `summarize`, `suggest_reply`,
       `suggest_solution` (top 3 from `KbService.search()` over subject+description; fallback:
       empty list), `categorize`, `apply_categorization_decision` (writes real `category_id` +
       `ai_suggestion_applied` event with suggestion+confidence, FR-044),
       `run_categorization_benchmark` — exactly per `plan.md` §Service Classes (depends on T108,
-      T109, T110, T103)
-- [ ] T112 Complete `backend/app/jobs/categorization_job.py` — now calls
-      `AiService.categorize(ticket_id)` before `AssignmentService.auto_assign_ticket` (replaces
-      Batch 4f's stub body) (depends on T111, T096)
-- [ ] T113 Create `backend/tests/golden/bilingual_tickets.json` — 20 tickets (mixed Arabic/
+      T109, T110, T103) — **T103 (`KbService`, Batch 4g) does not exist in this run** (this run's
+      explicit instruction: batch 4h only, do not begin 4f or 4g); `suggest_solution`
+      unconditionally takes FR-047's own documented fallback (empty list) instead of a partial/
+      fake search, with a docstring pointing at the real `KbService.search()` call Batch 4g adds.
+      Every other method is complete and independent of 4f/4g.
+- [X] T112 Create `backend/app/jobs/categorization_job.py` — calls `AiService.categorize(ticket_id)`
+      (depends on T111, T096) — **T096 (Batch 4f) does not exist in this run**, so this task
+      created the file fresh rather than "completing" a stub; it does not call
+      `AssignmentService.auto_assign_ticket` (Batch 4f, also not built) — a categorized ticket is
+      left unassigned rather than auto-assigned by code this run didn't build. Batch 4f adds that
+      call here when it lands. `backend/app/jobs/worker.py` now registers this job in place of
+      Batch 4a's `noop` placeholder.
+- [X] T113 Create `backend/tests/golden/bilingual_tickets.json` — 20 tickets (mixed Arabic/
       English) with known-correct category labels, per PLAN.md §5 F07 acceptance #6 / FR-050
-      (depends on T111)
-- [ ] T114 Create `backend/app/api/routers/ai.py` — `/tickets/{id}/ai/summary`,
+      (depends on T111) — self-contained: carries its own 8-category taxonomy so the score is
+      reproducible independent of any environment's seed data.
+- [X] T114 Create `backend/app/api/routers/ai.py` — `/tickets/{id}/ai/summary`,
       `/suggested-reply`, `/suggested-solution`, `/categorization-suggestion`,
       `/ai/categorization-benchmark` per `contracts/openapi.yaml` (depends on T111, T113)
-- [ ] T115 Wire `ai.py` into `backend/app/api/router.py` (depends on T114)
-- [ ] T116 [P] In `frontend/app/[locale]/(agent)/tickets/[id]/page.tsx`, add the AI summary
+- [X] T115 Wire `ai.py` into `backend/app/api/router.py` (depends on T114)
+- [X] T116 [P] In `frontend/app/[locale]/(agent)/tickets/[id]/page.tsx`, add the AI summary
       panel, suggested-reply-into-composer action, suggested-solution panel (not rendered on an
       empty fallback list), and the categorization-suggestion accept/override control (depends on
       T079, T114)
@@ -473,6 +482,55 @@ provides.
 **Gate (PLAN.md §6)**: With the configured LLM endpoint stopped (or the host disconnected from
 the network), every screen remains fully usable, no error dialogs appear, and all four AI-assisted
 capabilities visibly engage their documented fallback.
+
+**Gate verification (this run)**: Verified live against the already-running `docker compose`
+stack (postgres/redis/minio/backend/arq-worker/frontend) with the configured LLM endpoint
+unreachable (a stale/misconfigured model string against the currently-configured provider — see
+note below; degraded-path behavior is identical regardless of *why* the endpoint is unreachable) —
+logged in as the seeded `agent`:
+- `POST /tickets/{id}/ai/summary` → `{"summary": "<first 300 chars>", "fallback_used": true}`.
+- `POST /tickets/{id}/ai/suggested-reply` → `{"draft": "", "fallback_used": true}`.
+- `GET /tickets/{id}/ai/suggested-solution` → `[]` (documented fallback; also this run's
+  unconditional interim behavior pending Batch 4g — see T111 above).
+- A newly created ticket's `categorization_job` ran on the ARQ worker within a second (worker log
+  confirms `categorization_job` executing, not the old `noop`); the ticket's
+  `ai_suggested_category_id`/`ai_category_confidence` stayed `NULL` afterward.
+- `POST .../ai/categorization-suggestion {"accepted": true}` against a ticket with no suggestion
+  → 422, localized. `{"accepted": false, "override_category_id": "<id>"}` → 200, ticket's
+  `category_id` updated, one `ai_suggestion_applied` timeline event and one `audit_logs` row
+  written.
+- `POST /ai/categorization-benchmark` as the seeded `agent` → 403 (`admin.config`); as `admin` →
+  `{"scored_count": 20, "accuracy": 0.0}` (expected — every call falls back with the endpoint
+  unreachable).
+- Exactly one `llm_calls` row per attempted call, every one `fallback_used = true`.
+- `pytest backend/tests` (18/18, unchanged), `tsc --noEmit`, `npm run build`, and
+  `check-i18n-literals.sh` all pass clean.
+
+**Runtime note honored (this run's instruction)**: `LITELLM_TIMEOUT_SECONDS` (new
+`Settings`/`.env` key; `LiteLlmWrapper`'s own coded default stays PLAN.md F07's 10s) is set to 60
+in `backend/.env` for local CPU-only inference — recorded as `docs/DEBT.md` D13.
+`LITELLM_API_BASE`/`LITELLM_MODEL_CHAT`/`LITELLM_MODEL_CLASSIFY` were left as this environment's
+existing (pre-4h) values, since the exact Ollama base URL/model tags depend on downloads still in
+progress at the user's end; whatever value stands there, the degraded path behaves identically
+(confirmed above). One operational note for when the endpoint is pointed at Ollama: `litellm`
+needs a provider-prefixed model string against a custom `api_base` (e.g. `openai/<model>`) —
+a bare model name like `qwen3` fails with `LLM Provider NOT provided`, which itself still resolves
+to the correct fallback path (as verified above), it just isn't the same failure mode as "endpoint
+unreachable."
+
+**Also fixed, unrelated to 4h's own file list but blocking this batch's live verification**:
+- `backend/docker-compose.yml`'s `backend` service bind-mounts `./app` and `./alembic` for
+  hot-reload dev, but not `./tests` — `run_categorization_benchmark` reading
+  `tests/golden/bilingual_tickets.json` 500'd until `./tests:/app/tests` was added to that
+  service's volumes (the file is present in the built image via the Dockerfile's `COPY . .`; only
+  the dev bind-mount was missing it).
+- Pre-existing, **not fixed in code** (out of Batch 4h's scope — this is a Batch 4i/`seed.py`
+  concern): `ticket_reference_seq` sits at a low value while the seed script inserted `tickets`
+  rows with static `TKT-2026-000001`…`000040` reference numbers without advancing the sequence, so
+  `POST /tickets` collides (`UniqueViolationError`) until the sequence passes 40. Worked around
+  locally with `SELECT setval('ticket_reference_seq', 100)` to unblock this batch's live
+  verification; flagging for whoever next touches `seed.py` rather than silently patching seed
+  logic under an AI-batch task.
 
 ---
 

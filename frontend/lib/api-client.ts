@@ -161,6 +161,8 @@ export interface Ticket {
   closed_at: string | null;
   reopened_count: number;
   sla_paused_ms: number;
+  ai_suggested_category_id: string | null;
+  ai_category_confidence: number | null;
 }
 
 export interface TicketCreate {
@@ -239,6 +241,26 @@ export interface TokenPair {
   access_token: string;
   refresh_token: string;
   expires_in: number | null;
+}
+
+export interface AiSummaryResponse {
+  summary: string;
+  fallback_used: boolean;
+}
+
+export interface AiSuggestedReplyResponse {
+  draft: string;
+  fallback_used: boolean;
+}
+
+/** Batch 4g (`KbService`) is not built in this run — `GET .../ai/suggested-solution` always
+ * returns `[]` until then (see `backend/app/services/ai_service.py::suggest_solution`), so this
+ * type is left loose rather than modeling `KbSearchResult`'s full shape prematurely. */
+export type KbSearchResult = unknown;
+
+export interface BenchmarkResult {
+  scored_count: number;
+  accuracy: number;
 }
 
 export class ApiError extends Error {
@@ -459,5 +481,20 @@ export const api = {
     const form = new FormData();
     form.append("file", file);
     return request(`/tickets/${id}/attachments`, { method: "POST", body: form });
+  },
+  getAiSummary(id: string): Promise<AiSummaryResponse> {
+    return request(`/tickets/${id}/ai/summary`, { method: "POST" });
+  },
+  getAiSuggestedReply(id: string): Promise<AiSuggestedReplyResponse> {
+    return request(`/tickets/${id}/ai/suggested-reply`, { method: "POST" });
+  },
+  getAiSuggestedSolution(id: string): Promise<KbSearchResult[]> {
+    return request(`/tickets/${id}/ai/suggested-solution`);
+  },
+  acceptAiCategorization(id: string, accepted: boolean, overrideCategoryId?: string | null): Promise<Ticket> {
+    return request(`/tickets/${id}/ai/categorization-suggestion`, {
+      method: "POST",
+      body: JSON.stringify({ accepted, override_category_id: overrideCategoryId ?? null }),
+    });
   },
 };

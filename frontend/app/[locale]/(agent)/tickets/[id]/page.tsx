@@ -7,7 +7,15 @@ import { useTranslations } from "next-intl";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { LtrText } from "@/components/ltr-text";
-import { api, ApiError, type QuickReply, type Ticket, type User } from "@/lib/api-client";
+import {
+  api,
+  ApiError,
+  type Category,
+  type KbSearchResult,
+  type QuickReply,
+  type Ticket,
+  type User,
+} from "@/lib/api-client";
 
 /** F04 (T086) — substitutes `{{customer_name}}`/`{{reference_no}}`/`{{agent_name}}` into a
  * quick reply's body, matching the ticket's `source_locale` — the client-side mirror of
@@ -61,6 +69,14 @@ export default function TicketDetailPage() {
     queryKey: ["users"],
     queryFn: api.listUsers,
   });
+  const categoriesQuery = useQuery({
+    queryKey: ["categories"],
+    queryFn: api.listCategories,
+  });
+  const suggestedSolutionQuery = useQuery({
+    queryKey: ["ticket", ticketId, "ai-suggested-solution"],
+    queryFn: () => api.getAiSuggestedSolution(ticketId),
+  });
 
   const invalidateTicket = () => {
     queryClient.invalidateQueries({ queryKey: ["ticket", ticketId] });
@@ -109,6 +125,15 @@ export default function TicketDetailPage() {
         )}
       </section>
 
+      <AiCategorizationPanel
+        ticketId={ticketId}
+        ticket={ticket}
+        categories={categoriesQuery.data ?? []}
+        onDecided={invalidateTicket}
+      />
+
+      <AiSummaryPanel ticketId={ticketId} />
+
       <section className="mt-6 rounded border p-4">
         <h2 className="font-semibold">{t("statusTitle")}</h2>
         <p className="mt-1">
@@ -129,6 +154,8 @@ export default function TicketDetailPage() {
         <h2 className="font-semibold">{t("assignTitle")}</h2>
         <AssignForm ticketId={ticketId} currentAssigneeId={ticket.assignee_id} onAssigned={invalidateTicket} />
       </section>
+
+      <AiSuggestedSolutionPanel articles={suggestedSolutionQuery.data ?? []} />
 
       <section className="mt-6">
         <h2 className="font-semibold">{t("composerTitle")}</h2>
@@ -345,6 +372,18 @@ function ComposerForm({
     },
   });
 
+  /* T116 — suggested-reply-into-composer action. On-demand only (FR-046): the draft only ever
+   * lands in this textarea for the agent to edit; nothing here ever calls addTicketReply itself. */
+  const suggestReplyMutation = useMutation({
+    mutationFn: () => api.getAiSuggestedReply(ticketId),
+    onSuccess: (response) => {
+      if (response.draft) {
+        setBody(response.draft);
+        setVisibility("customer");
+      }
+    },
+  });
+
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (body.trim()) sendMutation.mutate();
@@ -352,6 +391,19 @@ function ComposerForm({
 
   return (
     <form onSubmit={handleSubmit} className="mt-2 flex flex-col gap-2 rounded border p-3">
+      <div>
+        <button
+          type="button"
+          onClick={() => suggestReplyMutation.mutate()}
+          disabled={suggestReplyMutation.isPending}
+          className="w-fit rounded border px-3 py-2 text-sm"
+        >
+          {t("aiSuggestReplyButton")}
+        </button>
+        {suggestReplyMutation.data?.fallback_used && (
+          <p className="mt-1 text-sm text-gray-600">{t("aiSuggestReplyFallbackNote")}</p>
+        )}
+      </div>
       <label className="flex flex-col gap-1">
         <span className="text-sm text-gray-600">{t("quickReplyLabel")}</span>
         <select
@@ -433,5 +485,135 @@ function AttachmentUploadForm({ ticketId }: { ticketId: string }) {
       {uploadMutation.isPending && <p>{t("uploading")}</p>}
       {uploadMutation.isError && <p role="alert">{t("error")}</p>}
     </div>
+  );
+}
+
+/** T116 — on-demand AI summary panel (FR-045/FR-047). Fallback (first 300 chars of the
+ * description) is surfaced identically to a real summary, with a note distinguishing the two. */
+function AiSummaryPanel({ ticketId }: { ticketId: string }) {
+  const t = useTranslations("TicketDetail");
+  const summaryMutation = useMutation({
+    mutationFn: () => api.getAiSummary(ticketId),
+  });
+
+  return (
+    <section className="mt-6 rounded border p-4">
+      <h2 className="font-semibold">{t("aiSummaryTitle")}</h2>
+      <button
+        type="button"
+        onClick={() => summaryMutation.mutate()}
+        disabled={summaryMutation.isPending}
+        className="mt-2 w-fit rounded border px-3 py-2 text-sm"
+      >
+        {t("aiSummaryButton")}
+      </button>
+      {summaryMutation.data && (
+        <div className="mt-2">
+          <p dir="auto">{summaryMutation.data.summary}</p>
+          {summaryMutation.data.fallback_used && (
+            <p className="mt-1 text-sm text-gray-600">{t("aiSummaryFallbackNote")}</p>
+          )}
+        </div>
+      )}
+      {summaryMutation.isError && <p role="alert">{t("error")}</p>}
+    </section>
+  );
+}
+
+/** T116 — suggested-solution panel (FR-047). Fallback is an empty list; per PLAN.md F07 the
+ * panel simply does not render rather than showing an empty-state message. `KbService` (Batch
+ * 4g) is not built in this run, so `articles` is always `[]` for now — see
+ * `backend/app/services/ai_service.py::suggest_solution`. */
+function AiSuggestedSolutionPanel({ articles }: { articles: KbSearchResult[] }) {
+  const t = useTranslations("TicketDetail");
+  if (articles.length === 0) return null;
+
+  return (
+    <section className="mt-6 rounded border p-4">
+      <h2 className="font-semibold">{t("aiSuggestedSolutionTitle")}</h2>
+      <ul className="mt-2 flex flex-col gap-2">
+        {articles.map((article, index) => (
+          <li key={index} className="rounded border p-2 text-sm" dir="auto">
+            {JSON.stringify(article)}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** T116 — categorization-suggestion accept/override control (FR-044). Renders nothing until the
+ * async `categorization_job` has actually populated a suggestion (or it fell back to none). */
+function AiCategorizationPanel({
+  ticketId,
+  ticket,
+  categories,
+  onDecided,
+}: {
+  ticketId: string;
+  ticket: Ticket;
+  categories: Category[];
+  onDecided: () => void;
+}) {
+  const t = useTranslations("TicketDetail");
+  const [overrideCategoryId, setOverrideCategoryId] = useState("");
+
+  const decisionMutation = useMutation({
+    mutationFn: (payload: { accepted: boolean; overrideCategoryId?: string | null }) =>
+      api.acceptAiCategorization(ticketId, payload.accepted, payload.overrideCategoryId),
+    onSuccess: onDecided,
+  });
+
+  if (!ticket.ai_suggested_category_id) return null;
+
+  const suggested = categories.find((category) => category.id === ticket.ai_suggested_category_id);
+
+  return (
+    <section className="mt-6 rounded border p-4">
+      <h2 className="font-semibold">{t("aiCategorizationTitle")}</h2>
+      <p className="mt-1" dir="auto">
+        {suggested ? `${suggested.label_ar} / ${suggested.label_en}` : ticket.ai_suggested_category_id}
+        {ticket.ai_category_confidence !== null && (
+          <>
+            {" — "}
+            {t("aiCategorizationConfidence")}: {Math.round(ticket.ai_category_confidence * 100)}%
+          </>
+        )}
+      </p>
+      <div className="mt-2 flex flex-wrap items-end gap-2">
+        <button
+          type="button"
+          onClick={() => decisionMutation.mutate({ accepted: true })}
+          disabled={decisionMutation.isPending}
+          className="rounded border px-3 py-2 text-sm"
+        >
+          {t("aiCategorizationAcceptButton")}
+        </button>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-gray-600">{t("aiCategorizationOverrideLabel")}</span>
+          <select
+            value={overrideCategoryId}
+            onChange={(event) => setOverrideCategoryId(event.target.value)}
+            className="rounded border px-3 py-2"
+          >
+            <option value="" />
+            {categories.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.label_ar} / {category.label_en}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          onClick={() => decisionMutation.mutate({ accepted: false, overrideCategoryId })}
+          disabled={decisionMutation.isPending || !overrideCategoryId}
+          className="rounded border px-3 py-2 text-sm"
+        >
+          {t("aiCategorizationOverrideButton")}
+        </button>
+      </div>
+      {decisionMutation.isError && <p role="alert">{t("error")}</p>}
+    </section>
   );
 }

@@ -157,6 +157,17 @@
     "uploadButton": "Upload attachment",
     "uploading": "Uploading…",
     "reopenedCount": "Reopened count",
-    "firstResponseAt": "First response at"
+    "firstResponseAt": "First response at",
+    "aiSummaryTitle": "AI summary",
+    "aiSummaryButton": "Get AI summary",
+    "aiSummaryFallbackNote": "AI is unavailable right now — showing the start of the description instead.",
+    "aiSuggestReplyButton": "Suggest reply (AI)",
+    "aiSuggestReplyFallbackNote": "AI is unavailable right now — compose the reply manually.",
+    "aiSuggestedSolutionTitle": "Suggested knowledge-base articles",
+    "aiCategorizationTitle": "AI category suggestion",
+    "aiCategorizationConfidence": "Confidence",
+    "aiCategorizationAcceptButton": "Accept",
+    "aiCategorizationOverrideButton": "Use this category instead",
+    "aiCategorizationOverrideLabel": "Override category"
   }
 }

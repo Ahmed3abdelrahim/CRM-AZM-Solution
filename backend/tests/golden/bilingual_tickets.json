@@ -1,0 +1,155 @@
+{
+  "_comment": "PLAN.md §5 F07 acceptance #6 / FR-050. Self-contained: `categories` is the fixed candidate taxonomy every ticket below is scored against, independent of any environment's live category data, so this file scores identically regardless of seed state. Consumed by AiService.run_categorization_benchmark (backend/app/services/ai_service.py).",
+  "categories": [
+    { "key": "billing", "label_ar": "الفواتير والمدفوعات", "label_en": "Billing & Payments" },
+    { "key": "technical_issue", "label_ar": "مشكلة تقنية", "label_en": "Technical Issue" },
+    { "key": "account_access", "label_ar": "الوصول إلى الحساب", "label_en": "Account Access" },
+    { "key": "shipping_delivery", "label_ar": "الشحن والتوصيل", "label_en": "Shipping & Delivery" },
+    { "key": "refund_request", "label_ar": "طلب استرداد", "label_en": "Refund Request" },
+    { "key": "product_inquiry", "label_ar": "استفسار عن المنتج", "label_en": "Product Inquiry" },
+    { "key": "complaint", "label_ar": "شكوى", "label_en": "Complaint" },
+    { "key": "feature_request", "label_ar": "طلب ميزة", "label_en": "Feature Request" }
+  ],
+  "tickets": [
+    {
+      "id": "g01",
+      "source_locale": "ar",
+      "subject": "تم خصم مبلغ إضافي من فاتورتي هذا الشهر",
+      "description": "لاحظت أن فاتورتي لهذا الشهر تحتوي على رسوم إضافية لم أطلبها من قبل، أرجو مراجعة الفاتورة وتوضيح سبب هذا الخصم.",
+      "expected_category_key": "billing"
+    },
+    {
+      "id": "g02",
+      "source_locale": "en",
+      "subject": "Charged twice for the same invoice",
+      "description": "My card was charged twice for invoice #4521 this month. Please refund the duplicate charge.",
+      "expected_category_key": "billing"
+    },
+    {
+      "id": "g03",
+      "source_locale": "ar",
+      "subject": "التطبيق يتوقف عن العمل عند فتح صفحة التذاكر",
+      "description": "في كل مرة أفتح فيها صفحة التذاكر يغلق التطبيق فجأة دون أي رسالة خطأ. جربت إعادة التثبيت لكن المشكلة مستمرة.",
+      "expected_category_key": "technical_issue"
+    },
+    {
+      "id": "g04",
+      "source_locale": "en",
+      "subject": "Dashboard crashes on load",
+      "description": "The agent dashboard throws a blank white screen every time I log in since this morning's update.",
+      "expected_category_key": "technical_issue"
+    },
+    {
+      "id": "g05",
+      "source_locale": "ar",
+      "subject": "لا أستطيع تسجيل الدخول إلى حسابي",
+      "description": "أدخل كلمة المرور الصحيحة لكن النظام يرفض تسجيل الدخول ويطلب مني إعادة المحاولة باستمرار.",
+      "expected_category_key": "account_access"
+    },
+    {
+      "id": "g06",
+      "source_locale": "en",
+      "subject": "Locked out of my account after password reset",
+      "description": "I reset my password following the email link, but I still can't log in — it says the account is locked.",
+      "expected_category_key": "account_access"
+    },
+    {
+      "id": "g07",
+      "source_locale": "ar",
+      "subject": "الشحنة لم تصل بعد رغم مرور أسبوعين",
+      "description": "طلبت المنتج منذ أسبوعين وحالة الطلب ما زالت 'قيد الشحن' دون أي تحديث. متى ستصل الشحنة؟",
+      "expected_category_key": "shipping_delivery"
+    },
+    {
+      "id": "g08",
+      "source_locale": "en",
+      "subject": "Package marked delivered but never arrived",
+      "description": "Tracking says the order was delivered yesterday but nothing showed up at my address. Can you investigate?",
+      "expected_category_key": "shipping_delivery"
+    },
+    {
+      "id": "g09",
+      "source_locale": "ar",
+      "subject": "أرغب باسترداد قيمة المنتج المعيب",
+      "description": "المنتج الذي استلمته تالف من التغليف، أرغب باسترداد كامل المبلغ وليس استبدال المنتج.",
+      "expected_category_key": "refund_request"
+    },
+    {
+      "id": "g10",
+      "source_locale": "en",
+      "subject": "Requesting a refund for a cancelled order",
+      "description": "I cancelled my order within the allowed window but haven't received a refund confirmation yet.",
+      "expected_category_key": "refund_request"
+    },
+    {
+      "id": "g11",
+      "source_locale": "ar",
+      "subject": "هل يدعم المنتج اللغة العربية بالكامل؟",
+      "description": "أفكر بشراء الباقة السنوية، أرغب بمعرفة ما إذا كانت جميع الميزات تدعم اللغة العربية بشكل كامل.",
+      "expected_category_key": "product_inquiry"
+    },
+    {
+      "id": "g12",
+      "source_locale": "en",
+      "subject": "Question about plan limits before upgrading",
+      "description": "Before I upgrade to the business plan, I'd like to know the exact ticket volume limits included.",
+      "expected_category_key": "product_inquiry"
+    },
+    {
+      "id": "g13",
+      "source_locale": "ar",
+      "subject": "خدمة العملاء كانت غير مهنية أثناء المكالمة",
+      "description": "تحدثت مع أحد الموظفين اليوم وكانت طريقة تعامله غير لائقة إطلاقًا، أرغب بتقديم شكوى رسمية بهذا الخصوص.",
+      "expected_category_key": "complaint"
+    },
+    {
+      "id": "g14",
+      "source_locale": "en",
+      "subject": "Very disappointed with the support I received",
+      "description": "The agent I spoke to yesterday was dismissive and never followed up as promised. I want to file a formal complaint.",
+      "expected_category_key": "complaint"
+    },
+    {
+      "id": "g15",
+      "source_locale": "ar",
+      "subject": "اقتراح لإضافة خاصية التصدير إلى Excel",
+      "description": "سيكون من المفيد جدًا لو أضفتم خاصية تصدير تقارير التذاكر مباشرة إلى ملف Excel بدلاً من PDF فقط.",
+      "expected_category_key": "feature_request"
+    },
+    {
+      "id": "g16",
+      "source_locale": "en",
+      "subject": "Please add dark mode to the dashboard",
+      "description": "It would be great if the agent dashboard supported a dark theme option for night shifts.",
+      "expected_category_key": "feature_request"
+    },
+    {
+      "id": "g17",
+      "source_locale": "ar",
+      "subject": "لم أستلم إيصال الدفع الإلكتروني",
+      "description": "دفعت قيمة الاشتراك السنوي بالبطاقة لكن لم يصلني أي إيصال أو فاتورة عبر البريد الإلكتروني حتى الآن.",
+      "expected_category_key": "billing"
+    },
+    {
+      "id": "g18",
+      "source_locale": "en",
+      "subject": "Two-factor authentication code never arrives",
+      "description": "Every time I try to log in, the SMS verification code doesn't reach my phone, so I can't get past the login screen.",
+      "expected_category_key": "account_access"
+    },
+    {
+      "id": "g19",
+      "source_locale": "ar",
+      "subject": "خطأ برمجي عند محاولة رفع مرفق للتذكرة",
+      "description": "عند محاولة رفع صورة كمرفق لأحد التذاكر تظهر رسالة خطأ 500 ولا يتم رفع الملف نهائيًا.",
+      "expected_category_key": "technical_issue"
+    },
+    {
+      "id": "g20",
+      "source_locale": "en",
+      "subject": "Order stuck in processing for 10 days",
+      "description": "My order has been stuck in 'processing' status for over 10 days with no shipping update at all.",
+      "expected_category_key": "shipping_delivery"
+    }
+  ]
+}
