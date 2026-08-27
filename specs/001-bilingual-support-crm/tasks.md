@@ -645,22 +645,22 @@ unreachable."
 **Contents (PLAN.md §6)**: F03 + F08 + F09 + F11 — webhook, email adapter, portal, reports, API
 keys, seed data.
 
-- [ ] T117 [P] Create `backend/app/channels/email_adapter.py` — functional `EmailAdapter`
+- [X] T117 [P] Create `backend/app/channels/email_adapter.py` — functional `EmailAdapter`
       (`ChannelAdapter`), IMAP poll via `httpx`/`imaplib`, implements `normalize()`/`send_reply()`
       (depends on T034)
-- [ ] T118 [P] Create `backend/app/channels/whatsapp_adapter.py`,
+- [X] T118 [P] Create `backend/app/channels/whatsapp_adapter.py`,
       `backend/app/channels/sms_adapter.py`, `backend/app/channels/chat_adapter.py` — each
       declares its `channel` and both `ChannelAdapter` methods, each raising
       `NotImplementedError(f"{self.channel} channel is Tier D — see specs/00X")` — present and
       importable, never absent (PLAN.md F03) (depends on T034)
-- [ ] T119 [P] Create `backend/app/schemas/channel.py` — `NormalizedMessagePayload`,
+- [X] T119 [P] Create `backend/app/schemas/channel.py` — `NormalizedMessagePayload`,
       `InboundMessageAccepted`, `ApiKey`, `ApiKeyCreate`, `ApiKeyCreated` per
       `contracts/openapi.yaml` (depends on T005)
-- [ ] T120 [P] Create `backend/app/schemas/portal.py` — `PortalTicketSubmit`,
+- [X] T120 [P] Create `backend/app/schemas/portal.py` — `PortalTicketSubmit`,
       `PortalTicketReceipt`, `PortalTicketView` per `contracts/openapi.yaml` (depends on T005)
-- [ ] T121 [P] Create `backend/app/schemas/report.py` — `TicketsByStatusReport`,
+- [X] T121 [P] Create `backend/app/schemas/report.py` — `TicketsByStatusReport`,
       `SlaComplianceReport`, `AgentVolumeReport` per `contracts/openapi.yaml` (depends on T005)
-- [ ] T122 Create `backend/app/services/channel_service.py` — `register_adapter`, `ingest`
+- [X] T122 Create `backend/app/services/channel_service.py` — `register_adapter`, `ingest`
       (persists raw payload to `inbound_messages` first; resolves branch/department via a quoted
       ticket reference override (FR-023b) or `channel_configs` match with system-default +
       `needs_triage` fallback (FR-023a); constructs a **fresh `TenantScope` from the resolved
@@ -668,43 +668,46 @@ keys, seed data.
       see `plan.md` §Post-Design Constitution Check); matches/creates the customer within that
       scope only; threads by `external_id`/`reference_no`), `poll_email` — exactly per `plan.md`
       §Service Classes (depends on T117, T118, T031, T073)
-- [ ] T123 Create `backend/app/jobs/email_poll_job.py` — runs `ChannelService.poll_email()`
+- [X] T123 Create `backend/app/jobs/email_poll_job.py` — runs `ChannelService.poll_email()`
       periodically (depends on T122, T094)
-- [ ] T124 Create `backend/app/services/portal_service.py` — `submit_ticket` (branch from
+- [X] T124 Create `backend/app/services/portal_service.py` — `submit_ticket` (branch from
       `category_id`'s own branch; department from the category's department, else system-default
       + `needs_triage`, reusing the exact same fallback `ChannelService` uses), `track_ticket`
       (returns `None` on any mismatch — unknown reference OR wrong contact — identically, FR-053),
       `get_history` (filters out `visibility="internal"`, FR-054) — exactly per `plan.md` §Service
       Classes (depends on T073, T031)
-- [ ] T125 Create `backend/app/services/report_service.py` — `tickets_by_status`,
+- [X] T125 Create `backend/app/services/report_service.py` — `tickets_by_status`,
       `sla_compliance`, `agent_volume`; each raises `PermissionDeniedError("report.cross_branch")`
       if `cross_branch=True` is requested without that permission (FR-060) — exactly per
       `plan.md` §Service Classes (depends on T031, T090)
-- [ ] T126 Create `backend/app/services/api_key_service.py` — `issue` (random secret, only the
+- [X] T126 Create `backend/app/services/api_key_service.py` — `issue` (random secret, only the
       Argon2 hash persisted), `revoke`, `authenticate` (used by API-key auth) — exactly per
       `plan.md` §Service Classes (depends on T031, T046)
-- [ ] T127 Complete `backend/app/api/deps.py`'s `get_current_actor()` to also accept `X-API-Key`
+- [X] T127 Complete `backend/app/api/deps.py`'s `get_current_actor()` to also accept `X-API-Key`
       via `ApiKeyService.authenticate`, building a `CurrentActor` whose `scope` is
       `TenantScope(branch_id=api_keys.branch_id, department_id=None)` (depends on T126, T047)
-- [ ] T128 Create `backend/app/api/routers/channels.py` — `POST /channels/inbound` (API-key auth
+- [X] T128 Create `backend/app/api/routers/channels.py` — `POST /channels/inbound` (API-key auth
       only) (depends on T122, T119, T127)
-- [ ] T129 Create `backend/app/api/routers/portal.py` — every `/portal/*` path, unauthenticated
+- [X] T129 Create `backend/app/api/routers/portal.py` — every `/portal/*` path, unauthenticated
       (`security: []`) per `contracts/openapi.yaml` (depends on T124, T120)
-- [ ] T130 Create `backend/app/api/routers/reports.py` — `/reports/*` per
+- [X] T130 Create `backend/app/api/routers/reports.py` — `/reports/*` per
       `contracts/openapi.yaml` (depends on T125, T121)
-- [ ] T131 Create `backend/app/api/routers/api_keys.py` — `/api-keys*` per
+- [X] T131 Create `backend/app/api/routers/api_keys.py` — `/api-keys*` per
       `contracts/openapi.yaml` (depends on T126, T119)
-- [ ] T132 Wire the Batch 4i routers into `backend/app/api/router.py`; confirm
+- [X] T132 Wire the Batch 4i routers into `backend/app/api/router.py`; confirm
       `GET /docs`/`GET /openapi.json` now covers every Tier M/S path in
       `contracts/openapi.yaml` (depends on T128, T129, T130, T131)
-- [ ] T133 [P] Create `frontend/app/[locale]/(portal)/submit/page.tsx`,
-      `frontend/app/[locale]/(portal)/track/page.tsx`,
-      `frontend/app/[locale]/(portal)/kb/page.tsx` — unauthenticated portal pages (depends on
-      T129)
-- [ ] T134 [P] Create `frontend/app/[locale]/(agent)/reports/page.tsx` — the three aggregates +
+- [X] T133 [P] Create `frontend/app/[locale]/portal/submit/page.tsx`,
+      `frontend/app/[locale]/portal/track/page.tsx`,
+      `frontend/app/[locale]/portal/kb/page.tsx` — unauthenticated portal pages. Placed under a
+      real `portal/` URL segment rather than a `(portal)` route group as originally planned: a
+      `(portal)/kb` route group resolves to the same URL as the pre-existing `(agent)/kb` page
+      (Batch 4g), which Next.js rejects as a duplicate-route build error — `/portal/kb` avoids the
+      collision (depends on T129)
+- [X] T134 [P] Create `frontend/app/[locale]/(agent)/reports/page.tsx` — the three aggregates +
       dashboard page, cross-branch toggle gated client-side (server still enforces it, T125)
       (depends on T130)
-- [ ] T135 [P] Create `frontend/app/[locale]/(agent)/admin/` API-key management screen (issue,
+- [X] T135 [P] Create `frontend/app/[locale]/(agent)/admin/` API-key management screen (issue,
       list, revoke) (depends on T131)
 - [X] T136 Create `backend/app/seed/seed.py` — idempotent seed matching PLAN.md §7 exactly: 2
       branches (different timezones/business hours), 3 departments, 5 users covering all four

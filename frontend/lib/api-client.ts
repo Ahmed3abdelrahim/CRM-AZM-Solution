@@ -298,6 +298,87 @@ export interface BenchmarkResult {
   accuracy: number;
 }
 
+export interface PortalTicketSubmit {
+  full_name: string;
+  contact_kind: ContactMethodKind;
+  contact_value: string;
+  subject: string;
+  description: string;
+  category_id: string;
+}
+
+export interface PortalTicketReceipt {
+  reference_no: string;
+}
+
+export interface PortalTicketView {
+  reference_no: string;
+  subject: string;
+  status_id: string;
+  created_at: string;
+  events: TicketEvent[];
+}
+
+export interface TicketsByStatusRow {
+  status_id: string;
+  branch_id: string;
+  department_id: string;
+  count: number;
+}
+
+export interface TicketsByStatusReport {
+  rows: TicketsByStatusRow[];
+}
+
+export interface SlaComplianceReport {
+  first_response_compliance_pct: number;
+  resolution_compliance_pct: number;
+}
+
+export interface AgentVolumeRow {
+  agent_id: string;
+  assigned_count: number;
+  resolved_count: number;
+  avg_resolution_minutes: number;
+}
+
+export interface AgentVolumeReport {
+  rows: AgentVolumeRow[];
+}
+
+export interface ReportFilters {
+  date_from?: string;
+  date_to?: string;
+  cross_branch?: boolean;
+}
+
+export interface ApiKey {
+  id: string;
+  branch_id: string | null;
+  label: string;
+  scopes: string[];
+  last_used_at: string | null;
+  expires_at: string | null;
+}
+
+export interface ApiKeyCreate {
+  branch_id?: string | null;
+  label: string;
+  scopes: string[];
+  expires_at?: string | null;
+}
+
+export interface ApiKeyCreated extends ApiKey {
+  plaintext_key: string;
+}
+
+export interface Permission {
+  id: string;
+  label_ar: string;
+  label_en: string;
+  code: string;
+}
+
 export class ApiError extends Error {
   status: number;
   messageAr?: string;
@@ -405,6 +486,14 @@ async function request<T>(
     return undefined as T;
   }
   return (await response.json()) as T;
+}
+
+function reportQuery(filters: ReportFilters): string {
+  return searchParams({
+    date_from: filters.date_from,
+    date_to: filters.date_to,
+    cross_branch: filters.cross_branch ? "true" : undefined,
+  });
 }
 
 function searchParams(params: Record<string, string | number | undefined>): string {
@@ -549,5 +638,52 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ accepted, override_category_id: overrideCategoryId ?? null }),
     });
+  },
+  // Portal (F08) — unauthenticated, no bearer token attached even if one happens to be stored.
+  submitPortalTicket(data: PortalTicketSubmit): Promise<PortalTicketReceipt> {
+    return request("/portal/tickets", { method: "POST", body: JSON.stringify(data) }, { skipAuthRedirect: true });
+  },
+  trackPortalTicket(referenceNo: string, contactValue: string): Promise<PortalTicketView> {
+    return request(
+      `/portal/tickets/${encodeURIComponent(referenceNo)}${searchParams({ contact_value: contactValue })}`,
+      {},
+      { skipAuthRedirect: true },
+    );
+  },
+  getPortalCustomerHistory(referenceNo: string, contactValue: string): Promise<PortalTicketView[]> {
+    return request(
+      `/portal/customers/${encodeURIComponent(referenceNo)}/history${searchParams({ contact_value: contactValue })}`,
+      {},
+      { skipAuthRedirect: true },
+    );
+  },
+  listPortalKbArticles(): Promise<KbArticle[]> {
+    return request("/portal/kb/articles", {}, { skipAuthRedirect: true });
+  },
+  getPortalKbArticle(slug: string): Promise<KbArticle> {
+    return request(`/portal/kb/articles/${encodeURIComponent(slug)}`, {}, { skipAuthRedirect: true });
+  },
+  // Reports (F09)
+  getTicketsByStatusReport(filters: ReportFilters): Promise<TicketsByStatusReport> {
+    return request(`/reports/tickets-by-status${reportQuery(filters)}`);
+  },
+  getSlaComplianceReport(filters: ReportFilters): Promise<SlaComplianceReport> {
+    return request(`/reports/sla-compliance${reportQuery(filters)}`);
+  },
+  getAgentVolumeReport(filters: ReportFilters): Promise<AgentVolumeReport> {
+    return request(`/reports/agent-volume${reportQuery(filters)}`);
+  },
+  listPermissions(): Promise<Permission[]> {
+    return request("/permissions");
+  },
+  // API keys (F11) — admin.config only
+  listApiKeys(): Promise<ApiKey[]> {
+    return request("/api-keys");
+  },
+  createApiKey(data: ApiKeyCreate): Promise<ApiKeyCreated> {
+    return request("/api-keys", { method: "POST", body: JSON.stringify(data) });
+  },
+  revokeApiKey(id: string): Promise<ApiKey> {
+    return request(`/api-keys/${id}/revoke`, { method: "POST" });
   },
 };

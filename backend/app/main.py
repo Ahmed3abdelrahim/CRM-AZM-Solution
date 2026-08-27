@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.router import api_router
 from app.config import settings
 from app.core.errors import register_error_handlers
+from app.services.channel_service import register_default_adapters
 
 structlog.configure(
     processors=[
@@ -61,6 +62,10 @@ def create_app() -> FastAPI:
 
     register_error_handlers(app)
     app.include_router(api_router)
+
+    # F03/Batch 4i — `ChannelService._adapters` is process-wide state; this is the API process's
+    # own registration point (the ARQ worker process has its own, app/jobs/worker.py's on_startup).
+    register_default_adapters()
 
     return app
 

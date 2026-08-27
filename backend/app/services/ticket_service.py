@@ -58,6 +58,47 @@ async def attach_computed_sla(session: AsyncSession, ticket: Ticket) -> Ticket:
     return ticket
 
 
+async def resolve_initial_status_id(session: AsyncSession, branch_id: UUID, department_id: UUID) -> UUID:
+    """The lowest-`sort_order` `ticket_statuses` row visible to this branch/department is treated
+    as the workflow's starting state — data-driven via the column `data-model.md` §1.14 defines
+    for exactly this kind of ordering, never a hardcoded status code (Principle XI). A module
+    function (not just `TicketService._resolve_initial_status_id`) so `ChannelService`/
+    `PortalService` (Batch 4i) — which create tickets without a `CurrentActor`, so they cannot go
+    through `TicketService.create()` itself — resolve the exact same starting status rather than
+    a second, silently-divergent copy of this query."""
+
+    stmt = (
+        select(TicketStatus.id)
+        .where(
+            TicketStatus.branch_id == branch_id,
+            (TicketStatus.department_id == department_id) | (TicketStatus.department_id.is_(None)),
+        )
+        .order_by(TicketStatus.sort_order.asc())
+        .limit(1)
+    )
+    result = await session.execute(stmt)
+    status_id = result.scalar_one_or_none()
+    if status_id is None:
+        raise ValidationError(
+            "لا توجد حالة تذاكر معرفة لهذا الفرع/القسم",
+            "No ticket status is configured for this branch/department",
+        )
+    return status_id
+
+
+async def generate_reference_no(session: AsyncSession) -> str:
+    """`TKT-{YYYY}-{6-digit sequence}` (data-model.md §1.16) — the numeric part comes from the DB
+    sequence `ticket_reference_seq` (created in Batch 4a's migration); the year comes from the
+    database's own clock in the same round trip, avoiding any app/DB clock skew. A module function
+    for the same reason as `resolve_initial_status_id` above."""
+
+    result = await session.execute(
+        select(func.nextval("ticket_reference_seq"), func.extract("year", func.now()))
+    )
+    seq, year = result.one()
+    return f"TKT-{int(year)}-{int(seq):06d}"
+
+
 def _enqueue_categorization_job(ticket_id: UUID) -> None:
     """Fire-and-forget (FR-049 — AI must never block ticket creation): schedules a background
     task that enqueues the ARQ job by name and returns immediately, without being awaited by the
@@ -125,39 +166,10 @@ class TicketService:
             )
 
     async def _resolve_initial_status_id(self, branch_id: UUID, department_id: UUID) -> UUID:
-        """The lowest-`sort_order` `ticket_statuses` row visible to this branch/department is
-        treated as the workflow's starting state — data-driven via the column `data-model.md`
-        §1.14 defines for exactly this kind of ordering, never a hardcoded status code
-        (Principle XI)."""
-
-        stmt = (
-            select(TicketStatus.id)
-            .where(
-                TicketStatus.branch_id == branch_id,
-                (TicketStatus.department_id == department_id) | (TicketStatus.department_id.is_(None)),
-            )
-            .order_by(TicketStatus.sort_order.asc())
-            .limit(1)
-        )
-        result = await self.session.execute(stmt)
-        status_id = result.scalar_one_or_none()
-        if status_id is None:
-            raise ValidationError(
-                "لا توجد حالة تذاكر معرفة لهذا الفرع/القسم",
-                "No ticket status is configured for this branch/department",
-            )
-        return status_id
+        return await resolve_initial_status_id(self.session, branch_id, department_id)
 
     async def _generate_reference_no(self) -> str:
-        """`TKT-{YYYY}-{6-digit sequence}` (data-model.md §1.16) — the numeric part comes from
-        the DB sequence `ticket_reference_seq` (created in Batch 4a's migration); the year comes
-        from the database's own clock in the same round trip, avoiding any app/DB clock skew."""
-
-        result = await self.session.execute(
-            select(func.nextval("ticket_reference_seq"), func.extract("year", func.now()))
-        )
-        seq, year = result.one()
-        return f"TKT-{int(year)}-{int(seq):06d}"
+        return await generate_reference_no(self.session)
 
     async def _resolve_actor_team_id(self, actor: CurrentActor) -> UUID | None:
         stmt = (

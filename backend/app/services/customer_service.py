@@ -59,6 +59,18 @@ class CustomerRepository(ScopedRepository[Customer]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def find_by_contact_value(self, value: str) -> Customer | None:
+        """FR-023/FR-053 — exact (case-insensitive) `contact_methods.value` match within this
+        repository's own scope, used by `ChannelService`/`PortalService` (Batch 4i) for
+        find-or-create customer matching. Never crosses branch/department (FR-023: "the same
+        person legitimately contacting two different branches MUST produce two separate customer
+        records") because it starts from `self._scoped_select()`, same as `search()` above."""
+        stmt = self._scoped_select().join(
+            ContactMethod, ContactMethod.customer_id == Customer.id
+        ).where(ContactMethod.value.ilike(value))
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
 
 class ContactMethodRepository(ScopedRepository[ContactMethod]):
     model = ContactMethod

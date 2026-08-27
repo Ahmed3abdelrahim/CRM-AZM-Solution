@@ -250,6 +250,12 @@ export default function DashboardPage() {
         <Link href="/kb" className="underline">
           {t("kbLink")}
         </Link>
+        <Link href="reports" className="underline">
+          {t("reportsLink")}
+        </Link>
+        <Link href="admin" className="underline">
+          {t("adminLink")}
+        </Link>
       </div>
 
       <div className="mt-4">

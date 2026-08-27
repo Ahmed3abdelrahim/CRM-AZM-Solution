@@ -49,6 +49,22 @@ class Settings(BaseSettings):
     KB_RERANK_ENABLED: bool = False
     KB_RERANK_MODEL: str = "BAAI/bge-reranker-v2-m3"
 
+    # F03 — EmailAdapter (Batch 4i). Empty IMAP_HOST/SMTP_HOST means "no mailbox configured for
+    # this environment": `EmailAdapter.fetch_unseen()`/`send_reply()` degrade to a no-op rather
+    # than raising, the same fallback shape F07's LiteLlmWrapper uses for an unreachable model —
+    # the demo path exercises the channel via `POST /channels/inbound` directly (quickstart.md
+    # §9), never via a real mailbox, so these are never required to be set for the gate to pass.
+    IMAP_HOST: str = ""
+    IMAP_PORT: int = 993
+    IMAP_USER: str = ""
+    IMAP_PASSWORD: str = ""
+    IMAP_MAILBOX: str = "INBOX"
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    EMAIL_FROM_ADDRESS: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:
