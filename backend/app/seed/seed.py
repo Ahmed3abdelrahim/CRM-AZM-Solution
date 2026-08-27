@@ -35,10 +35,12 @@ import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.chunking import chunk_text
+from app.ai.embeddings import get_embedding_model
 from app.config import settings
 from app.core.security import hash_password
 from app.db import async_session_factory
@@ -47,7 +49,7 @@ from app.models.channel_config import ChannelConfig
 from app.models.customer import ContactMethod, Customer
 from app.models.department import Department
 from app.models.branch import Branch
-from app.models.kb_article import KbArticle
+from app.models.kb_article import KbArticle, KbArticleChunk
 from app.models.priority import Priority
 from app.models.quick_reply import QuickReply
 from app.models.role import Permission, Role, RolePermission
@@ -170,6 +172,13 @@ PERMISSIONS: dict[str, tuple[str, str, list[str]]] = {
     "customer.delete": ("إلغاء تفعيل العميل", "Deactivate Customer", ["admin"]),
     "report.cross_branch": ("تقارير عبر الفروع", "Cross-Branch Reports", ["admin"]),
     "audit.read": ("عرض سجل التدقيق", "View Audit Log", ["admin"]),
+    # F06 (Batch 4g) — data-model.md §5's generic {entity}.read/.create convention. `read` is
+    # granted as broadly as ticket.read (an agent must be able to search the KB while handling a
+    # ticket, FR-042); authoring/publishing content is a lead/admin curation task, matching how
+    # ticket.assign/ticket.reopen are lead+admin-only elsewhere in this table.
+    "kb_article.read": ("عرض مقالات قاعدة المعرفة", "View KB Articles", ["agent", "lead", "admin"]),
+    "kb_article.create": ("إنشاء/تعديل مقالات قاعدة المعرفة", "Create/Edit KB Articles", ["lead", "admin"]),
+    "kb_article.publish": ("نشر مقالات قاعدة المعرفة", "Publish KB Articles", ["lead", "admin"]),
 }
 
 
@@ -641,6 +650,66 @@ async def seed_kb_articles(
     await upsert(session, KbArticle, rows)
 
 
+async def seed_kb_article_embeddings(session: AsyncSession) -> None:
+    """F06 (Batch 4g) backfill — the 10 articles `seed_kb_articles` just wrote were inserted
+    directly via `upsert()`, bypassing `KbService.create_article`, so they carry no
+    `kb_article_chunks` of their own. This chunks (~500 tokens/50 overlap, `KB_CHUNK_TOKENS`/
+    `KB_CHUNK_OVERLAP_TOKENS`) and embeds (fixed `BAAI/bge-m3`, `EMBEDDING_MODEL`) every published
+    article that doesn't already have chunks, so the batch 4g gate — a bilingual query against
+    the seeded set — has real semantic-half data to search, not lexical-only.
+
+    Skipped per-article, not just on `ON CONFLICT DO NOTHING` at insert time: a second run must
+    not re-invoke the embedding model at all for an article already chunked (T137's idempotency
+    check is about row counts, but re-embedding 10 articles' worth of chunks on every seed run
+    would make `docker compose exec backend python -m app.seed.seed` needlessly slow to re-run).
+    If the embedding model itself is unavailable (not yet downloaded, no matching device, etc.),
+    seeding still completes — search then falls back to lexical-only until it is (FR-043)."""
+
+    result = await session.execute(select(KbArticle).where(KbArticle.is_published.is_(True)))
+    articles = list(result.scalars().all())
+    if not articles:
+        return
+
+    already_chunked_result = await session.execute(select(KbArticleChunk.kb_article_id).distinct())
+    already_chunked = {row[0] for row in already_chunked_result.all()}
+    pending = [article for article in articles if article.id not in already_chunked]
+    if not pending:
+        print("[seed] kb_article_chunks already populated for every published article — skipping.")
+        return
+
+    try:
+        model = get_embedding_model()
+    except Exception as exc:  # noqa: BLE001 — seeding must still complete without embeddings
+        print(f"[seed] embedding model unavailable, skipping kb_article_chunks backfill: {exc}")
+        return
+
+    rows: list[dict] = []
+    for article in pending:
+        for locale, body in (("ar", article.body_ar), ("en", article.body_en)):
+            chunks = chunk_text(body, settings.KB_CHUNK_TOKENS, settings.KB_CHUNK_OVERLAP_TOKENS)
+            if not chunks:
+                continue
+            try:
+                vectors = model.embed(chunks)
+            except Exception as exc:  # noqa: BLE001 — same rationale, scoped to one article/locale
+                print(f"[seed] embedding failed for article {article.id} ({locale}): {exc}")
+                continue
+            for index, (content, vector) in enumerate(zip(chunks, vectors)):
+                rows.append(
+                    dict(
+                        id=sid("kb_chunk", str(article.id), locale, str(index)),
+                        kb_article_id=article.id,
+                        locale=locale,
+                        chunk_index=index,
+                        content=content,
+                        embedding=vector,
+                        created_by=article.created_by,
+                    )
+                )
+    await upsert(session, KbArticleChunk, rows)
+    print(f"[seed] kb_article_chunks: {len(rows)} chunk(s) embedded for {len(pending)} article(s).")
+
+
 # --------------------------------------------------------------------------------------------
 # Tickets (40, spread across every status/priority/channel; some pre-breaching)
 # --------------------------------------------------------------------------------------------
@@ -975,6 +1044,7 @@ async def run() -> None:
         await seed_channel_configs(session, category_ids)
         customers = await seed_customers(session)
         await seed_kb_articles(session, category_ids)
+        await seed_kb_article_embeddings(session)
         await seed_tickets(session, status_ids, priority_ids, category_ids, customers, sla_ids)
         await sync_ticket_reference_sequence(session)
         await session.commit()

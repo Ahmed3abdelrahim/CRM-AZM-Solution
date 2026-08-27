@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 from uuid import UUID, uuid4
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,7 +20,11 @@ from app.models.ticket_event import TicketEvent
 from app.repositories.scoped_repository import TenantScope
 from app.repositories.ticket_repository import TicketRepository
 from app.schemas.ai import AiSuggestedReplyResponse, AiSummaryResponse, BenchmarkResult
+from app.schemas.kb_article import KbSearchResult
+from app.services.kb_service import KbService
 from app.services.ticket_service import attach_sla_placeholders
+
+logger = structlog.get_logger(__name__)
 
 _GOLDEN_SET_PATH = Path(__file__).resolve().parents[2] / "tests" / "golden" / "bilingual_tickets.json"
 
@@ -81,17 +85,21 @@ class AiService:
         return AiSuggestedReplyResponse(draft=result.text.strip(), fallback_used=False)
 
     @require_permission("ticket.read")
-    async def suggest_solution(self, actor: CurrentActor, ticket_id: UUID) -> list[Any]:
-        """FR-047 — top 3 KB articles from `KbService.search()` over subject+description.
-        `KbService` is Batch 4g scope, deliberately not built in this run (batch 4h only, per this
-        run's explicit instruction), so this unconditionally takes the documented fallback path
-        (empty list, panel does not render — PLAN.md F07) rather than a partial/fake search. Once
-        4g lands, replace the body with a real `KbService.search()` call over
-        `f"{ticket.subject} {ticket.description}"`, keeping this fallback for when that call's own
-        `fallback_used` is true."""
+    async def suggest_solution(self, actor: CurrentActor, ticket_id: UUID) -> list[KbSearchResult]:
+        """FR-047 — top 3 KB articles from `KbService.search()` (Batch 4g) over
+        subject+description. `KbService.search()` never raises (it degrades to lexical-only, or
+        to an empty result, on its own) — the `except` below exists only for a permission gap
+        between `ticket.read` and `kb_article.read` (data-model.md §5.1 grants both to the same
+        three roles, so this should never actually trigger), not for AI/embedding failures."""
 
-        await self._get_ticket(ticket_id)  # 404s the same way the other three AI reads do
-        return []
+        ticket = await self._get_ticket(ticket_id)
+        kb_service = KbService(self.session, self.scope)
+        query = f"{ticket.subject} {ticket.description}"
+        try:
+            return await kb_service.search(actor, query, limit=3)
+        except Exception as exc:  # noqa: BLE001 — FR-047's fallback is an empty list, never an error
+            logger.warning("suggest_solution_failed", ticket_id=str(ticket_id), error=str(exc))
+            return []
 
     async def _active_categories(self, ticket: Ticket) -> list[categorization.CategoryOption]:
         stmt = select(Category).where(

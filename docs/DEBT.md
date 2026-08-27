@@ -25,6 +25,7 @@ An undocumented shortcut is a violation. If you take one during implementation, 
 | D11 | i18n enforcement is a grep check, not an ESLint rule | Proper ESLint rule integrated in CI | Phase 2 |
 | D12 | Admin configuration is API-only; no UI for branches, departments, users, roles, taxonomy, SLA policies, quick replies, or teams | Admin UI screens under `frontend/app/[locale]/(agent)/admin/`, one per `admin_config.py` router group | Before handover to non-technical administrators | 1–2 days |
 | D13 | `LITELLM_TIMEOUT_SECONDS=60` (dev override; `LiteLlmWrapper`'s coded default stays PLAN.md F07's 10s) — CPU-only local inference (Ollama, no GPU during dev) is far slower per call than the 10s budget assumes | 10s timeout, one retry, against a GPU-backed endpoint (self-hosted or remote, per D07) | GPU hardware available for LLM inference, restoring PLAN.md F07's original latency budget | Config-only — 1 line |
+| D14 | Ollama serving (single-request); OLLAMA_NUM_GPU=0 forced on the dev laptop | vLLM with continuous batching | Deployment to GPU hardware |
 ---
 
 ## Standing constraints these shortcuts must not violate

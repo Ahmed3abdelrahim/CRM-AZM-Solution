@@ -243,9 +243,12 @@ export default function DashboardPage() {
         </button>
       </fieldset>
 
-      <div className="mt-4">
+      <div className="mt-4 flex gap-4">
         <Link href="/customers" className="underline">
           {t("customersLink")}
+        </Link>
+        <Link href="/kb" className="underline">
+          {t("kbLink")}
         </Link>
       </div>
 

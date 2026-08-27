@@ -253,10 +253,45 @@ export interface AiSuggestedReplyResponse {
   fallback_used: boolean;
 }
 
-/** Batch 4g (`KbService`) is not built in this run — `GET .../ai/suggested-solution` always
- * returns `[]` until then (see `backend/app/services/ai_service.py::suggest_solution`), so this
- * type is left loose rather than modeling `KbSearchResult`'s full shape prematurely. */
-export type KbSearchResult = unknown;
+export interface KbArticle {
+  id: string;
+  branch_id: string;
+  department_id: string | null;
+  slug: string;
+  title_ar: string;
+  title_en: string;
+  body_ar: string;
+  body_en: string;
+  category_id: string;
+  is_published: boolean;
+  view_count: number;
+  helpful_count: number;
+}
+
+export interface KbArticleCreate {
+  branch_id: string;
+  department_id?: string | null;
+  slug: string;
+  title_ar: string;
+  title_en: string;
+  body_ar: string;
+  body_en: string;
+  category_id: string;
+}
+
+export interface KbArticleUpdate {
+  title_ar?: string;
+  title_en?: string;
+  body_ar?: string;
+  body_en?: string;
+  category_id?: string;
+}
+
+export interface KbSearchResult {
+  article: KbArticle;
+  score: number;
+  matched_locale: Locale | null;
+}
 
 export interface BenchmarkResult {
   scored_count: number;
@@ -490,6 +525,24 @@ export const api = {
   },
   getAiSuggestedSolution(id: string): Promise<KbSearchResult[]> {
     return request(`/tickets/${id}/ai/suggested-solution`);
+  },
+  listKbArticles(limit = 50, offset = 0): Promise<KbArticle[]> {
+    return request(`/kb/articles${searchParams({ limit, offset })}`);
+  },
+  getKbArticle(id: string): Promise<KbArticle> {
+    return request(`/kb/articles/${id}`);
+  },
+  createKbArticle(data: KbArticleCreate): Promise<KbArticle> {
+    return request("/kb/articles", { method: "POST", body: JSON.stringify(data) });
+  },
+  updateKbArticle(id: string, data: KbArticleUpdate): Promise<KbArticle> {
+    return request(`/kb/articles/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+  },
+  publishKbArticle(id: string): Promise<KbArticle> {
+    return request(`/kb/articles/${id}/publish`, { method: "POST" });
+  },
+  searchKb(q: string, limit = 10): Promise<KbSearchResult[]> {
+    return request(`/kb/search${searchParams({ q, limit })}`);
   },
   acceptAiCategorization(id: string, accepted: boolean, overrideCategoryId?: string | null): Promise<Ticket> {
     return request(`/tickets/${id}/ai/categorization-suggestion`, {

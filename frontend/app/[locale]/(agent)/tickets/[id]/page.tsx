@@ -520,10 +520,9 @@ function AiSummaryPanel({ ticketId }: { ticketId: string }) {
   );
 }
 
-/** T116 — suggested-solution panel (FR-047). Fallback is an empty list; per PLAN.md F07 the
- * panel simply does not render rather than showing an empty-state message. `KbService` (Batch
- * 4g) is not built in this run, so `articles` is always `[]` for now — see
- * `backend/app/services/ai_service.py::suggest_solution`. */
+/** T116 — suggested-solution panel (FR-047), backed by `KbService.search()` (Batch 4g). Fallback
+ * is an empty list; per PLAN.md F07 the panel simply does not render rather than showing an
+ * empty-state message. */
 function AiSuggestedSolutionPanel({ articles }: { articles: KbSearchResult[] }) {
   const t = useTranslations("TicketDetail");
   if (articles.length === 0) return null;
@@ -532,11 +531,17 @@ function AiSuggestedSolutionPanel({ articles }: { articles: KbSearchResult[] }) 
     <section className="mt-6 rounded border p-4">
       <h2 className="font-semibold">{t("aiSuggestedSolutionTitle")}</h2>
       <ul className="mt-2 flex flex-col gap-2">
-        {articles.map((article, index) => (
-          <li key={index} className="rounded border p-2 text-sm" dir="auto">
-            {JSON.stringify(article)}
-          </li>
-        ))}
+        {articles.map((result) => {
+          const isAr = result.matched_locale === "ar";
+          const title = isAr ? result.article.title_ar : result.article.title_en;
+          const body = isAr ? result.article.body_ar : result.article.body_en;
+          return (
+            <li key={result.article.id} className="rounded border p-2 text-sm" dir="auto">
+              <p className="font-medium">{title}</p>
+              <p className="text-gray-600">{body}</p>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

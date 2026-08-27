@@ -12,6 +12,7 @@ from app.schemas.ai import (
     BenchmarkResult,
     CategorizationDecision,
 )
+from app.schemas.kb_article import KbSearchResult
 from app.schemas.ticket import Ticket
 from app.services.ai_service import AiService
 
@@ -42,7 +43,11 @@ async def get_ai_suggested_reply(
     return await service.suggest_reply(actor, id)
 
 
-@router.get("/tickets/{id}/ai/suggested-solution", operation_id="getAiSuggestedSolution")
+@router.get(
+    "/tickets/{id}/ai/suggested-solution",
+    response_model=list[KbSearchResult],
+    operation_id="getAiSuggestedSolution",
+)
 async def get_ai_suggested_solution(
     id: UUID,
     actor: CurrentActor = Depends(get_current_actor),

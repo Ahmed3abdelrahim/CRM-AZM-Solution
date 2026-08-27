@@ -34,6 +34,21 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: str = "http://localhost:3000"
 
+    # F06 — BAAI/bge-m3, fixed 1024-dim (matches kb_article_chunks.embedding's vector(1024)
+    # column, data-model.md §1.22 — not casually changed once populated). EMBEDDING_DEVICE is
+    # never hardcoded in app/ai/embeddings.py: "auto" probes CUDA and falls back to CPU, so the
+    # same code runs unchanged on this CPU-only laptop and on GPU hardware later
+    # (docs/architecture/stack.md).
+    EMBEDDING_MODEL: str = "BAAI/bge-m3"
+    EMBEDDING_DEVICE: str = "auto"
+    KB_CHUNK_TOKENS: int = 500
+    KB_CHUNK_OVERLAP_TOKENS: int = 50
+
+    # F06 — bge-reranker-v2-m3, behind a feature flag, default off (research.md/stack.md: adds
+    # 300-800ms/query; disabled returns the reciprocal-rank-fused order directly, FR-043).
+    KB_RERANK_ENABLED: bool = False
+    KB_RERANK_MODEL: str = "BAAI/bge-reranker-v2-m3"
+
 
 @lru_cache
 def get_settings() -> Settings:
